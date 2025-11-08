@@ -231,9 +231,6 @@ export interface ToolFuncPackage {
   unregister?: () => void;
 }
 
-/**
- * Declaration merging to extend the `ToolFunc` class with `BaseFunc` properties and allow arbitrary properties.
- */
 export declare interface ToolFunc extends BaseFunc {
   [name: string]: any;
 }
