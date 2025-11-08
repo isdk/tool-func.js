@@ -271,7 +271,7 @@ main();
 
 This example would output:
 
-```
+```sh
 Stream started!
 Received chunk: a
 Processed chunk: A
