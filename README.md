@@ -148,37 +148,138 @@ setTimeout(() => {
 
 ### Streaming Responses
 
-Define a tool that can stream its output.
+To create a tool that can stream its output, follow these steps:
+
+1. **Enable Streaming Capability**: Set `stream: true` in the tool's definition. This marks the tool as *capable* of streaming.
+2. **Check for Streaming Request**: Inside your `func`, use the `this.isStream(params)` method. This checks if the current execution was requested as a stream. By default, it looks for a `stream: true` parameter in the incoming arguments.
+3. **Add a Control Parameter (Optional)**: If your tool should support *both* streaming and regular value returns, add a `stream: { type: 'boolean' }` parameter to your `params` definition. This allows users to choose the return type (e.g., by passing `{ stream: true }`). If your tool *only* streams, you don't need this parameter.
+
+The example below demonstrates a flexible tool that can return either a stream or a single value.
 
 ```typescript
-import { ToolFunc, createCallbacksTransformer } from '@isdk/tool-func';
+import { ToolFunc } from '@isdk/tool-func';
 
-const streamingTool = new ToolFunc({
-  name: 'streamingTool',
-  stream: true, // Enable streaming capability
+// 1. Define the tool with streaming capability
+const streamableTask = new ToolFunc({
+  name: 'streamableTask',
+  description: 'A task that can return a value or a stream.',
+  stream: true, // Mark as stream-capable
+  params: {
+    // Declare a 'stream' parameter to control the output type
+    stream: { type: 'boolean', description: 'Whether to stream the output.' }
+  },
   func: function(params) {
-    const stream = new ReadableStream({
-      async start(controller) {
-        for (let i = 0; i < 5; i++) {
-          controller.enqueue({ chunk: i });
-          await new Promise(r => setTimeout(r, 100));
+    // 2. Check if streaming is requested
+    if (this.isStream(params)) {
+      // Return a ReadableStream for streaming output
+      return new ReadableStream({
+        async start(controller) {
+          for (let i = 0; i < 5; i++) {
+            controller.enqueue(`Chunk ${i}\n`);
+            await new Promise(r => setTimeout(r, 100));
+          }
+          controller.close();
         }
-        controller.close();
-      }
-    });
-
-    // Use a transformer to handle stream events
-    const transformer = createCallbacksTransformer({
-      onTransform: (chunk) => console.log('Received:', chunk),
-      onFinal: () => console.log('Stream finished!'),
-    });
-
-    return stream.pipeThrough(transformer);
+      });
+    } else {
+      // Return a regular value if not streaming
+      return 'Completed in one go';
+    }
   }
 });
 
-streamingTool.register();
-ToolFunc.run('streamingTool');
+// 3. Register the tool
+streamableTask.register();
+
+// 4. Run in both modes
+async function main() {
+  console.log('--- Running in non-streaming mode ---');
+  const result = await ToolFunc.run('streamableTask', { stream: false });
+  console.log('Result:', result); // Output: Completed in one go
+
+  console.log('\n--- Running in streaming mode ---');
+  const stream = await ToolFunc.run('streamableTask', { stream: true });
+
+  // 5. Consume the stream
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      console.log('Stream finished.');
+      break;
+    }
+    process.stdout.write(value); // Output: Chunk 0, Chunk 1, ...
+  }
+}
+
+main();
+```
+
+### Handling Stream Events with `createCallbacksTransformer`
+
+While `ToolFunc` allows you to *return* streams, you often need to process the data *within* a stream. The `createCallbacksTransformer` utility creates a `TransformStream` that makes it easy to hook into a stream's lifecycle events. This is useful for logging, data processing, or triggering side effects as data flows through the stream.
+
+It accepts an object with the following optional callback functions:
+
+- `onStart`: Called once when the stream is initialized.
+- `onTransform`: Called for each chunk of data that passes through the stream.
+- `onFinal`: Called once the stream is successfully closed.
+- `onError`: Called if an error occurs during the stream's processing.
+
+Here's how you can use it to observe a stream:
+
+```typescript
+import { createCallbacksTransformer } from '@isdk/tool-func';
+
+async function main() {
+  // 1. Create a transformer with callbacks
+  const transformer = createCallbacksTransformer({
+    onStart: () => console.log('Stream started!'),
+    onTransform: (chunk) => {
+      console.log('Received chunk:', chunk);
+      // You can modify the chunk here if needed
+      return chunk.toUpperCase();
+    },
+    onFinal: () => console.log('Stream finished!'),
+    onError: (err) => console.error('Stream error:', err),
+  });
+
+  // 2. Create a source ReadableStream
+  const readableStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue('a');
+      controller.enqueue('b');
+      controller.enqueue('c');
+      controller.close();
+    },
+  });
+
+  // 3. Pipe the stream through the transformer
+  const transformedStream = readableStream.pipeThrough(transformer);
+
+  // 4. Read the results from the transformed stream
+  const reader = transformedStream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    console.log('Processed chunk:', value);
+  }
+}
+
+main();
+```
+
+This example would output:
+
+```
+Stream started!
+Received chunk: a
+Processed chunk: A
+Received chunk: b
+Processed chunk: B
+Received chunk: c
+Processed chunk: C
+Stream finished!
 ```
 
 ### Parameter Handling: Object vs. Positional

@@ -148,37 +148,138 @@ setTimeout(() => {
 
 ### 流式响应
 
-定义一个可以流式传输其输出的工具。
+要创建一个可以流式输出其结果的工具，请遵循以下步骤：
+
+1. **启用流式传输能力**: 在工具的定义中设置 `stream: true`。这会将该工具标记为*具备*流式传输能力。
+2. **检查流式传输请求**: 在 `func` 内部，使用 `this.isStream(params)` 方法。该方法会检查当前调用是否被请求为流。默认情况下，它会检查传入参数中是否存在 `stream: true`。
+3. **添加控制参数（可选）**: 如果您的工具需要*同时*支持流式和常规值返回，请在 `params` 定义中添加一个 `stream: { type: 'boolean' }` 参数。这允许用户选择返回类型（例如，通过传递 `{ stream: true }`）。如果您的工具*只*支持流式输出，则不需要此参数。
+
+下面的示例演示了一个可以根据请求返回流或单个值的灵活工具。
 
 ```typescript
-import { ToolFunc, createCallbacksTransformer } from '@isdk/tool-func';
+import { ToolFunc } from '@isdk/tool-func';
 
-const streamingTool = new ToolFunc({
-  name: 'streamingTool',
-  stream: true, // 启用流式传输能力
+// 1. 定义工具的流式传输能力
+const streamableTask = new ToolFunc({
+  name: 'streamableTask',
+  description: '一个可以返回值或流的任务。',
+  stream: true, // 标记为支持流式传输
+  params: {
+    // 声明一个 'stream' 参数来控制输出类型
+    stream: { type: 'boolean', description: '是否以流的方式输出。' }
+  },
   func: function(params) {
-    const stream = new ReadableStream({
-      async start(controller) {
-        for (let i = 0; i < 5; i++) {
-          controller.enqueue({ chunk: i });
-          await new Promise(r => setTimeout(r, 100));
+    // 2. 检查是否请求了流式传输
+    if (this.isStream(params)) {
+      // 返回一个 ReadableStream 以进行流式输出
+      return new ReadableStream({
+        async start(controller) {
+          for (let i = 0; i < 5; i++) {
+            controller.enqueue(`数据块 ${i}\n`);
+            await new Promise(r => setTimeout(r, 100));
+          }
+          controller.close();
         }
-        controller.close();
-      }
-    });
-
-    // 使用转换器处理流事件
-    const transformer = createCallbacksTransformer({
-      onTransform: (chunk) => console.log('收到:', chunk),
-      onFinal: () => console.log('流已结束!'),
-    });
-
-    return stream.pipeThrough(transformer);
+      });
+    } else {
+      // 如果不是流式传输，则返回一个常规值
+      return '一次性完成';
+    }
   }
 });
 
-streamingTool.register();
-ToolFunc.run('streamingTool');
+// 3. 注册工具
+streamableTask.register();
+
+// 4. 以两种模式运行
+async function main() {
+  console.log('--- 以非流式模式运行 ---');
+  const result = await ToolFunc.run('streamableTask', { stream: false });
+  console.log('结果:', result); // 输出: 一次性完成
+
+  console.log('\n--- 以流式模式运行 ---');
+  const stream = await ToolFunc.run('streamableTask', { stream: true });
+
+  // 5. 消费流
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      console.log('流已结束。');
+      break;
+    }
+    process.stdout.write(value); // 输出: 数据块 0, 数据块 1, ...
+  }
+}
+
+main();
+```
+
+### 使用 `createCallbacksTransformer` 处理流事件
+
+虽然 `ToolFunc` 允许您*返回*流，但您通常还需要处理流*内部*的数据。`createCallbacksTransformer` 实用工具可以创建一个 `TransformStream`，让您能够轻松地挂接到流的生命周期事件中。这对于在数据流经时进行日志记录、数据处理或触发副作用非常有用。
+
+它接受一个包含以下可选回调函数的对象：
+
+- `onStart`: 在流初始化时调用一次。
+- `onTransform`: 对于流经的每个数据块调用。
+- `onFinal`: 在流成功关闭时调用一次。
+- `onError`: 在流处理过程中发生错误时调用。
+
+以下是如何使用它来观察流：
+
+```typescript
+import { createCallbacksTransformer } from '@isdk/tool-func';
+
+async function main() {
+  // 1. 使用回调创建一个转换器
+  const transformer = createCallbacksTransformer({
+    onStart: () => console.log('流已开始！'),
+    onTransform: (chunk) => {
+      console.log('收到数据块:', chunk);
+      // 如果需要，您可以在此处修改数据块
+      return chunk.toUpperCase();
+    },
+    onFinal: () => console.log('流已结束！'),
+    onError: (err) => console.error('流错误:', err),
+  });
+
+  // 2. 创建一个源 ReadableStream
+  const readableStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue('a');
+      controller.enqueue('b');
+      controller.enqueue('c');
+      controller.close();
+    },
+  });
+
+  // 3. 将流通过转换器进行管道传输
+  const transformedStream = readableStream.pipeThrough(transformer);
+
+  // 4. 从转换后的流中读取结果
+  const reader = transformedStream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    console.log('处理后的数据块:', value);
+  }
+}
+
+main();
+```
+
+此示例将输出：
+
+```
+流已开始！
+收到数据块: a
+处理后的数据块: A
+收到数据块: b
+处理后的数据块: B
+收到数据块: c
+处理后的数据块: C
+流已结束！
 ```
 
 ### 参数处理：对象参数与位置参数
