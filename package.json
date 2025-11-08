@@ -1,6 +1,6 @@
 {
   "name": "@isdk/tool-func",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A manager for creating, registering, and executing reusable tool functions with rich metadata.",
   "author": "Riceball LEE <snowyu.lee@gmail.com>",
   "license": "MIT",
