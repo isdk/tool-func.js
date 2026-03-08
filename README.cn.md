@@ -123,11 +123,11 @@ console.log(await ToolFunc.run('statefulTool'));
 
 上下文对象不仅仅是数据的载体，它还是控制工具执行行为的配置集：
 
-- **`isolated`**: `boolean` (可选)。强制为本次调用开启独立的执行作用域。即便 `ctx` 中没有其他属性，设置为 `true` 也会触发影子实例的创建，确保并发安全性。
-- **`inheritContext`**: `boolean` (可选)。控制上下文的自动传播。默认为 `true`。若设为 `false`，则本次调用将拥有一个全新的、不继承父级属性的上下文环境。
-- **`signal`**: `AbortSignal` (可选)。标准 Web API。当外部中止操作时，工具内部可以通过 `this.ctx.signal` 捕获并停止运行。
-- **`signals`**: `AbortSignal[]` (可选)。支持传入多个中止信号，其中任何一个信号中止都会触发任务停止。
-- **`aborter`**: `Aborter` (可选)。自定义的中止器。`Cancelable` 能力会自动在此处注入并管理任务生命周期。
+- **`isolated`**: `boolean` (可选)。内核实现，强制为本次调用开启独立的执行作用域。即便 `ctx` 中没有其他属性，设置为 `true` 也会触发影子实例的创建，确保并发安全性。
+- **`inheritContext`**: `boolean` (可选)。内核实现，控制上下文的自动传播。默认为 `true`。若设为 `false`，则本次调用将拥有一个全新的、不继承父级属性的上下文环境。
+- **`signal`**: `AbortSignal` (可选)。建议，标准 Web API。当外部中止操作时，工具内部可以通过 `this.ctx.signal` 捕获并停止运行。
+- **`signals`**: `AbortSignal[]` (可选)。建议，支持传入多个中止信号，其中任何一个信号中止都会触发任务停止。
+- **`aborter`**: `Aborter` (可选)。建议，自定义的中止器。注入`Cancelable` 能力后会自动在此处注入并管理任务生命周期。
 - **`自定义属性`**: 您可以将任何业务相关的 Metadata（如 `userId`, `traceId`）直接平铺在上下文对象中。
 
 > **⚠️ 关于非纯对象的说明：**
@@ -223,42 +223,72 @@ await runner.run({ id: 789 });
 在工具链式调用中（例如工具 A 的实现中调用了 `this.runAs('B')`），上下文会自动流动：
 
 - **默认行为**：B 自动继承 A 的所有 `ctx` 属性。
-- **显式控制**：在 `runAs` 时可以传入新的 `ctx`，该 `ctx` 将作为子上下文合并（继承）到当前调用中。
+- **显式控制**：在 `runAs(params?, ctx?: ToolFuncContext)` 时可以传入新的 `ctx`，该 `ctx` 将作为子上下文合并（继承）到当前调用中。
 - **位置参数支持**：由于位置参数函数（`runWithPos`）不接受 `ctx` 参数，**必须**通过 `this.with(ctx).runWithPos(...)` 来确保上下文能正确注入。
 
 ### 异步与可取消任务
 
-基于上述的上下文机制，`makeToolFuncCancelable` 可以更加优雅地工作。它会自动将 `TaskAbortController` (aborter) 注入到 `this.ctx.aborter` 中。
+在处理 AI 代理请求、大数据处理或复杂的异步工作流时，任务往往耗时较长。**可取消能力 (Cancelable Ability)** 允许开发者在任务运行中途将其安全中止，避免无效的计算和资源浪费。
+
+#### 1. 核心机制：透明的上下文集成
+
+通过 `makeToolFuncCancelable` 赋予工具“可取消”能力后，框架会自动参与执行上下文的构建：
+
+- **自动注入**: 每次调用工具时，框架会在影子实例的 `this.ctx` 中自动注入一个 `TaskAbortController` (简称 `aborter`)。
+- **环境隔离**: 每个并发任务拥有独立的中止器，互不干扰。
+- **信号联动**: 如果上下文 (`ctx`) 中传入了外部的 `signal` 或 `signals`，注入的 `aborter` 会自动与这些信号链接。只要外部信号中止，内部任务将立即感知。
+
+#### 2. 使用示例
+
+下面的示例展示了如何定义一个支持中止的长耗时循环任务：
 
 ```typescript
 import { ToolFunc, makeToolFuncCancelable, AsyncFeatures } from '@isdk/tool-func';
 
+// 1. 赋予 ToolFunc 类可取消的能力
 const CancellableToolFunc = makeToolFuncCancelable(ToolFunc);
 
+// 2. 定义具体的长耗时工具
 const myLongTask = new CancellableToolFunc({
   name: 'myLongTask',
-  asyncFeatures: AsyncFeatures.Cancelable,
+  asyncFeatures: AsyncFeatures.Cancelable, // 声明开启取消特性
   func: async function(params) {
-    // 从上下文获取 aborter，实现取消逻辑
+    // 从上下文获取自动注入的 aborter
     const aborter = this.ctx.aborter;
 
     for (let i = 0; i < 100; i++) {
+      // 执行实际工作
       await doSomeWork();
-      // 检查中止状态
+
+      // 核心步骤：检查中止状态。如果已中止，此处会抛出 AbortError
       aborter.throwIfAborted();
     }
-    return '完成';
+    return '任务成功完成';
   }
 });
 
 myLongTask.register();
 
-// 运行并中途取消
+// 3. 运行任务并获取控制句柄
+// 异步执行会返回一个带 .task 属性的 Promise
 const promise = ToolFunc.run('myLongTask');
-const task = promise.task; // 获取任务控制器
+const task = promise.task; // 获取本次调用的任务控制器
 
+// 模拟在 1 秒后发现不再需要结果，发起中止
 setTimeout(() => task.abort('不再需要结果'), 1000);
+
+try {
+  await promise;
+} catch (err) {
+  console.log(err.message); // 输出: "不再需要结果"
+}
 ```
+
+#### 3. 关键点解析
+
+- **`aborter.throwIfAborted()`**: 这是推荐的检查方式。它能确保在中止发生时，业务逻辑能以标准的 `AbortError` 退出，从而触发正确的资源清理流程。
+- **任务句柄 (Task Handle)**: `ToolFunc.run` 返回的 Promise 上挂载了 `task` 对象。这使得调用者无需深入了解上下文细节，即可直接通过句柄控制任务生命周期。
+- **超时支持**: 您可以在调用时直接传入 `timeout` 参数（通过 `params` 或 `ctx`），框架会自动设置定时器并在超时后触发 `aborter.abort()`。
 
 ### 流式响应
 
