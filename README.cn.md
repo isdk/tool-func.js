@@ -110,40 +110,144 @@ console.log(await ToolFunc.run('statefulTool'));
 // "状态: configured, 初始化于: ..."
 ```
 
+### 执行上下文 (Context) 与 并发隔离
+
+在生产级应用中，工具函数通常不是孤立运行的。它们需要感知并响应“执行环境”的变化。例如：在分布式追踪中需要携带 `traceId`，在 Web 服务中需要感知当前 `userId`，或者在长时间任务中需要响应 `AbortSignal` 中止信号。
+
+为了在支持这些复杂需求的同时，又不破坏工具函数本身的纯洁性（即“逻辑与环境分离”），`@isdk/tool-func` 引入了一套基于**原型链影子实例**的上下文管理机制。
+
+#### 1. `ToolFuncContext` 核心接口
+
+上下文对象不仅仅是数据的载体，它还是控制工具执行行为的配置集：
+
+- **`isolated`**: `boolean` (可选)。强制为本次调用开启独立的执行作用域。
+- **`inheritContext`**: `boolean` (可选)。控制上下文的自动传播。默认为 `true`。
+- **`signal`**: `AbortSignal` (可选)。标准 Web API。当外部中止操作时，工具内部可以通过 `this.ctx.signal` 捕获并停止运行。
+- **`自定义属性`**: 您可以将任何业务相关的 Metadata（如 `userId`, `traceId`）直接平铺在上下文对象中。
+
+#### 2. 访问上下文：`static ctx` 与 `instance.ctx`
+
+框架在类级别（静态）和对象级别（实例）都维护了 `ctx` 属性，它们的分工非常明确：
+
+- **静态 `ToolFunc.ctx`**: 这是一个全局或代理层级的“默认环境”。当您使用 `ToolFunc.with(ctx)` 时，它会返回一个带此属性的类影子。
+- **实例 `this.ctx`**: 这是工具内部逻辑（`func`）访问上下文的**唯一合法入口**。它保证了无论在何种并发下，您拿到的永远是“属于本次调用”的数据。
+
+> **💡 架构设计权衡：为什么不“平铺”上下文？**
+> 我们严禁将上下文数据直接挂载到 `this`（如 `this.user`）。因为 `ToolFunc` 实例拥有 `name`, `params`, `title` 等核心元数据。如果上下文里恰巧也有一个 `name` 字段，直接平铺会彻底摧毁工具的定义，导致难以排查的 Bug。`this.ctx` 提供了安全的隔离空间。
+
+#### 3. 核心机制：影子实例 (Shadow Instance)
+
+这是本框架最精妙的设计。为了解决并发冲突，我们没有使用笨重的深拷贝，而是利用了 JavaScript 的**原型链 (Prototype Chain)**。
+
+当您调用 `tool.with({ user: 'Alice' }).run()` 时：
+
+1. **创建影子**：框架执行 `Object.create(tool)`。
+2. **注入属性**：在产生的影子对象上挂载 `ctx: { user: 'Alice' }`。
+3. **逻辑执行**：影子对象执行 `func`。此时 `this` 指向影子对象，因此 `this.ctx` 返回 Alice；同时，因为原型链的存在，`this.name` 依然能正确访问到原工具定义的名称。
+
+**这种设计的优势：**
+
+- **内存极低**：影子对象只是一个极薄的属性层，不持有逻辑副本。
+- **并发安全**：每个影子对象都是独立的。100 个并发请求对应 100 个影子对象，互不干扰。
+- **动态继承**：您可以连续调用 `.with().with()`，上下文会形成链式继承。
+
+#### 4. Fluent API 的双重形态
+
+我们提供了链式调用接口，让代码读起来像自然语言：
+
+##### 静态形态：`ToolFunc.with(ctx)`
+
+用于在全局层面或未获取实例时，预设执行环境。它返回的是一个“静态代理类”。
+
+```typescript
+// 以后续所有调用都带上当前用户信息
+const AuthorizedRunner = ToolFunc.with({ token: 'abc-123', role: 'admin' });
+
+// 执行任意工具，它们都能通过 this.ctx.role 拿到 admin
+await AuthorizedRunner.run('deleteUser', { id: 789 });
+```
+
+##### 实例形态：`tool.with(ctx)`
+
+用于针对特定工具进行精细化环境配置。它返回的是一个“执行期影子实例”。
+
+```typescript
+const uploadTool = ToolFunc.get('uploadFile');
+
+// 为单次上传任务设置追踪 ID 和中止信号
+const controller = new AbortController();
+const runner = uploadTool.with({
+  traceId: 'T-555',
+  signal: controller.signal
+});
+
+await runner.run({ id: 789 });
+```
+
+#### 5. 高级扩展钩子 (面向插件开发者)
+
+如果您正在开发 AoP (面向切面) 插件（如：自动日志、权限拦截、性能追踪），或者需要自定义工具的隔离行为，您需要深入理解以下两个核心内部钩子。它们是框架扩展性的基石：
+
+- **`_shouldIsolate(params, ctx)`**: **影子实例的“准入开关”**。
+  - **作用**：决定本次调用是否需要创建一个全新的影子实例。
+  - **`ctx` 参数**：特指用户在调用 `run(params, ctx)` 或 `runSync(params, ctx)` 时显式传入的“调用时上下文”。
+  - **判断逻辑**：
+    1. 如果用户传入了 `ctx`，则必须隔离以应用这些覆盖。
+    2. 如果当前实例已经是一个影子实例（拥有自己的 `ctx` 属性），且用户没有传入新的 `ctx`，则不再重复隔离，直接复用。
+    3. 如果实例拥有“预设上下文”（通过 `.with()` 设置），则必须隔离。
+  - **自定义场景**：您可以重写此方法，根据 `params` 中的特定字段（如 `forceNewScope: true`）来强制开启隔离。
+
+- **`_prepareContext(params, ctx)`**: **上下文的“加工工厂”**。
+  - **作用**：在影子实例创建后，负责构建该实例最终持有的 `this.ctx` 对象。
+  - **核心逻辑——原型继承**：
+    1. 它首先获取“父级上下文”（即当前实例已有的 `this.ctx`）。
+    2. 如果 `inheritContext` 配置为 `true`（默认值），它会执行 `Object.create(parentCtx)`。
+    3. 这样，新上下文就“继承”了父级的所有属性（如 `traceId`），但又提供了一个空的顶层空间。
+    4. 最后，将用户显式传入的 `ctx` 覆盖到这个新对象的顶层。
+  - **自定义场景**：插件（如 `Cancelable`）会重写此方法，在这里自动往 `this.ctx` 中注入 `aborter` 或 `logger` 实例，从而实现对业务逻辑透明的功能注入。
+
+> **⚠️ 注意**：在重写这些方法时，务必调用 `super._shouldIsolate` 或 `super._prepareContext` 以保证框架核心功能的正常运行。
+
+#### 6. 上下文的自动传播 (Propagation)
+
+在工具链式调用中（例如工具 A 的实现中调用了 `this.runAs('B')`），上下文会自动流动：
+
+- **默认行为**：B 自动继承 A 的所有 `ctx` 属性。
+- **显式控制**：在 `runAs` 时可以传入新的 `ctx`，该 `ctx` 将作为子上下文合并（继承）到当前调用中。
+- **位置参数支持**：由于位置参数函数（`runWithPos`）不接受 `ctx` 参数，**必须**通过 `this.with(ctx).runWithPos(...)` 来确保上下文能正确注入。
+
 ### 异步与可取消任务
 
-添加强大的异步功能，如取消和并发控制。
+基于上述的上下文机制，`makeToolFuncCancelable` 可以更加优雅地工作。它会自动将 `TaskAbortController` (aborter) 注入到 `this.ctx.aborter` 中。
 
 ```typescript
 import { ToolFunc, makeToolFuncCancelable, AsyncFeatures } from '@isdk/tool-func';
 
-// 创建 ToolFunc 类的可取消版本
-const CancellableToolFunc = makeToolFuncCancelable(ToolFunc, {
-  maxTaskConcurrency: 5, // 最多允许 5 个并发任务
-});
+const CancellableToolFunc = makeToolFuncCancelable(ToolFunc);
 
-const longRunningTask = new CancellableToolFunc({
-  name: 'longRunningTask',
-  asyncFeatures: AsyncFeatures.Cancelable, // 标记为可取消
-  func: async function(params, aborter) {
-    console.log('任务已开始...');
-    await new Promise(resolve => setTimeout(resolve, 5000)); // 5秒任务
-    aborter.throwIfAborted(); // 检查是否已取消
-    console.log('任务已完成!');
-    return { success: true };
+const myLongTask = new CancellableToolFunc({
+  name: 'myLongTask',
+  asyncFeatures: AsyncFeatures.Cancelable,
+  func: async function(params) {
+    // 从上下文获取 aborter，实现取消逻辑
+    const aborter = this.ctx.aborter;
+
+    for (let i = 0; i < 100; i++) {
+      await doSomeWork();
+      // 检查中止状态
+      aborter.throwIfAborted();
+    }
+    return '完成';
   }
 });
 
-longRunningTask.register();
+myLongTask.register();
 
-// 运行任务并获取其 aborter
-const promise = ToolFunc.run('longRunningTask');
-const task = promise.task;
+// 运行并中途取消
+const promise = ToolFunc.run('myLongTask');
+const task = promise.task; // 获取任务控制器
 
-// 2秒后中止任务
-setTimeout(() => {
-  task.abort('用户取消');
-}, 2000);
+setTimeout(() => task.abort('不再需要结果'), 1000);
 ```
 
 ### 流式响应

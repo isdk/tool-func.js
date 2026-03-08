@@ -9,6 +9,34 @@ import { AsyncFeatureBits } from './utils/async-features';
  * Represents the data type of a function parameter as a string (e.g., `'string'`, `'number'`).
  */
 export type FuncParamType = string
+
+/**
+ * Execution context for a tool function.
+ */
+export interface ToolFuncContext {
+  /**
+   * Whether to enable independent execution scope.
+   * If true, a temporary instance will be created via Object.create(this) to isolate concurrency.
+   */
+  isolated?: boolean;
+
+  /**
+   * Whether to allow context inheritance/propagation in nested calls.
+   * Defaults to true.
+   */
+  inheritContext?: boolean;
+
+  /**
+   * Standard Web AbortSignal for propagating cancellation signals.
+   */
+  signal?: AbortSignal;
+
+  /**
+   * Allows users to extend arbitrary properties.
+   */
+  [key: string]: any;
+}
+
 /**
  * Describes a single function parameter, including its name, type, and description.
  * @interface
@@ -310,6 +338,42 @@ export class ToolFunc extends AdvancePropertyManager {
   static dataPath: string;
 
   /**
+   * The static execution context for proxy classes created via ToolFunc.with().
+   * @type {ToolFuncContext}
+   */
+  static ctx?: ToolFuncContext;
+
+  /**
+   * Returns a static proxy with the provided context.
+   *
+   * @param {ToolFuncContext} ctx - The context to use.
+   * @returns {typeof ToolFunc} A static proxy of ToolFunc class.
+   */
+  static with(ctx: ToolFuncContext): typeof ToolFunc {
+    const proxy = Object.create(this);
+    proxy.ctx = ctx;
+    return proxy;
+  }
+
+  /**
+   * Returns an isolated instance with the provided context.
+   *
+   * @param {ToolFuncContext} ctx - The context to use.
+   * @returns {this} An isolated ToolFunc instance.
+   */
+  with(ctx: ToolFuncContext): this {
+    const runner = Object.create(this);
+    runner.ctx = this._prepareContext(undefined, ctx);
+    return runner;
+  }
+
+  /**
+   * The execution context for the current function call.
+   * Only available when isolated execution is enabled.
+   */
+  ctx?: ToolFuncContext;
+
+  /**
    * Retrieves a registered function by its name or alias.
    * @param {string} name - The name or alias of the function to retrieve.
    * @returns {ToolFunc | undefined} The `ToolFunc` instance if found, otherwise `undefined`.
@@ -385,7 +449,7 @@ export class ToolFunc extends AdvancePropertyManager {
    */
   static hasAsyncFeature(feature: AsyncFeatureBits) {
     const proto = this.prototype
-    let features = proto.asyncFeatures ?? 0
+    let features = proto.asyncFeatures || 0
     if (proto._asyncFeatures) { features |= proto._asyncFeatures }
     return IntSet.has(features, feature)
   }
@@ -394,13 +458,14 @@ export class ToolFunc extends AdvancePropertyManager {
    * Asynchronously executes a registered function by name with named parameters.
    * @param {string} name - The name of the function to run.
    * @param {any} [params] - The parameters object for the function.
+   * @param {ToolFuncContext} [ctx] - The execution context.
    * @returns {Promise<any>} A promise that resolves with the function's result.
    * @throws {NotFoundError} If the function with the given name is not found.
    */
-  static run(name: string, params?: any): Promise<any> {
+  static run(name: string, params?: any, ctx?: ToolFuncContext): Promise<any> {
     const func = this.get(name)
     if (func) {
-      return func.run(params)
+      return func.run(params, ctx || this.ctx)
     }
     throw new NotFoundError(`${name} to run`, this.name);
   }
@@ -409,13 +474,14 @@ export class ToolFunc extends AdvancePropertyManager {
    * Synchronously executes a registered function by name with named parameters.
    * @param {string} name - The name of the function to run.
    * @param {any} [params] - The parameters object for the function.
+   * @param {ToolFuncContext} [ctx] - The execution context.
    * @returns {any} The result of the function's execution.
    * @throws {NotFoundError} If the function with the given name is not found.
    */
-  static runSync(name: string, params?: any) {
+  static runSync(name: string, params?: any, ctx?: ToolFuncContext) {
     const func = this.get(name)
     if (func) {
-      return func.runSync(params)
+      return func.runSync(params, ctx || this.ctx)
     }
     throw new NotFoundError(`${name} to run`, this.name);
   }
@@ -657,12 +723,54 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
+   * Determines if the function execution should be isolated into a "Shadow Instance".
+   * Isolation creates a lightweight clone of the current tool to provide a unique `this.ctx`
+   * for the duration of the call, preventing property collisions in concurrent environments.
+   *
+   * @param {any} [params] - The runtime parameters for the function call.
+   * @param {ToolFuncContext} [ctx] - The optional execution context provided by the user for this specific call (e.g., via `runSync(params, ctx)`).
+   * @returns {boolean} `true` if a shadow instance should be created, otherwise `false`.
+   * @protected
+   */
+  protected _shouldIsolate(params?: any, ctx?: ToolFuncContext): boolean {
+    if (ctx) return true;
+    // If already isolated (own property ctx), no need to isolate again.
+    if (Object.prototype.hasOwnProperty.call(this, 'ctx')) return false;
+    return !!this.ctx;
+  }
+
+  /**
+   * Creates the final execution context (`this.ctx`) for a Shadow Instance.
+   * It handles context inheritance from the parent instance and merges user-provided overrides
+   * from the current call.
+   *
+   * @param {any} [params] - The runtime parameters for the function call.
+   * @param {ToolFuncContext} [ctx] - The optional execution context provided by the user for this specific call, used as overrides.
+   * @returns {ToolFuncContext} The prepared, merged context for the new shadow instance.
+   * @protected
+   */
+  protected _prepareContext(params?: any, ctx?: ToolFuncContext): ToolFuncContext {
+    const parentCtx = this.ctx || {};
+    const inherit = ctx?.inheritContext !== false && parentCtx.inheritContext !== false;
+    const result = inherit ? Object.create(parentCtx) : {};
+    if (ctx) { Object.assign(result, ctx); }
+    return result;
+  }
+
+  /**
    * Executes the function synchronously with a named parameters object.
    * @param {any} [params] - The parameters object for the function.
+   * @param {ToolFuncContext} [ctx] - The execution context.
    * @returns {any} The result of the function execution.
    * @throws Will throw an error if an array of parameters is passed to a function that expects an object.
    */
-  runSync(params?: any) {
+  runSync(params?: any, ctx?: ToolFuncContext) {
+    if (this._shouldIsolate(params, ctx)) {
+      const runner = Object.create(this);
+      runner.ctx = this._prepareContext(params, ctx);
+      return runner.runSync(params);
+    }
+
     const isPosParams = this.params && Array.isArray(this.params)
     if (Array.isArray(params)) {
       if (isPosParams) return this.func!(...params)
@@ -679,10 +787,11 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Executes the function asynchronously with a named parameters object.
    * @param {any} [params] - The parameters object for the function.
+   * @param {ToolFuncContext} [ctx] - The execution context.
    * @returns {Promise<any>} A promise that resolves with the function's result.
    */
-  run(params?: any): Promise<any> {
-    return this.runSync(params)
+  run(params?: any, ctx?: ToolFuncContext): Promise<any> {
+    return this.runSync(params, ctx)
   }
 
   /**
@@ -690,10 +799,11 @@ export class ToolFunc extends AdvancePropertyManager {
    * This method delegates to `runAsSync()` internally.
    * @param {string} name - The name of the target function to run.
    * @param {any} [params] - Optional parameters to pass to the function.
+   * @param {ToolFuncContext} [ctx] - The execution context.
    * @returns {Promise<any>} A promise that resolves with the result of the function execution.
    */
-  runAs(name:string, params?: any): Promise<any> {
-    return this.runAsSync(name, params)
+  runAs(name:string, params?: any, ctx?: ToolFuncContext): Promise<any> {
+    return this.runAsSync(name, params, ctx)
   }
 
   /**
@@ -701,10 +811,11 @@ export class ToolFunc extends AdvancePropertyManager {
    * This is a convenience method that forwards the call to the static `runSync()` method.
    * @param {string} name - The name of the target function to run.
    * @param {any} [params] - Optional parameters to pass to the function.
+   * @param {ToolFuncContext} [ctx] - The execution context.
    * @returns {any} The result of the function execution.
    */
-  runAsSync(name:string, params?: any) {
-    const result = (this.constructor as any).runSync(name, params)
+  runAsSync(name:string, params?: any, ctx?: ToolFuncContext) {
+    const result = (this.constructor as any).runSync(name, params, ctx ?? this.ctx)
     return result
   }
 
@@ -716,7 +827,7 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {Function | undefined} A function reference or `undefined` if not found.
    */
   getFunc(name?: string) {
-    const result = name ? (this.constructor as typeof ToolFunc).getFunc(name) : this.runSync.bind(this)
+    const result = name ? (this.constructor as typeof ToolFunc).getFunc(name) : (params: any, ctx?: ToolFuncContext) => this.runSync(params, ctx)
     return result
   }
 
@@ -727,6 +838,12 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {any} The result of the function execution.
    */
   runWithPosSync(...params:any[]) {
+    if (this._shouldIsolate(params)) {
+      const runner = Object.create(this);
+      runner.ctx = this._prepareContext(params);
+      return runner.runWithPosSync(...params);
+    }
+
     if (this.params && !Array.isArray(this.params)) {
       params = this.arr2ObjParams(params)
     }
@@ -773,7 +890,7 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {Function | undefined} A function reference or `undefined` if not found.
    */
   getFuncWithPos(name?: string) {
-    const result = name ? (this.constructor as any).getFuncWithPos(name) : this.runWithPosSync.bind(this)
+    const result = name ? (this.constructor as any).getFuncWithPos(name) : (...args: any[]) => this.runWithPosSync(...args)
     return result
   }
 
