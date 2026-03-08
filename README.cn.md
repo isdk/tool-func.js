@@ -123,6 +123,7 @@ console.log(await ToolFunc.run('statefulTool'));
 - **`isolated`**: `boolean` (可选)。强制为本次调用开启独立的执行作用域。
 - **`inheritContext`**: `boolean` (可选)。控制上下文的自动传播。默认为 `true`。
 - **`signal`**: `AbortSignal` (可选)。标准 Web API。当外部中止操作时，工具内部可以通过 `this.ctx.signal` 捕获并停止运行。
+- **`aborter`**: `Aborter` (可选)。自定义的中止器，用于在工具内部捕获并停止运行。 `Cancelable` 能力会使用该上下文。
 - **`自定义属性`**: 您可以将任何业务相关的 Metadata（如 `userId`, `traceId`）直接平铺在上下文对象中。
 
 #### 2. 访问上下文：`static ctx` 与 `instance.ctx`
