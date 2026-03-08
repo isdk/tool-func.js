@@ -72,8 +72,8 @@ const welcomeUser = new ToolFunc({
     userFetcher: getUser,
   },
   func: function(params) {
-    // `this` 是 ToolFunc 实例，所以我们可以使用 `runSync`
-    const user = this.runSync('userFetcher', { id: params.userId });
+    // `this` 是 ToolFunc 实例，我们使用 `runAsSync` 来运行依赖
+    const user = this.runAsSync('userFetcher', { id: params.userId });
     return `你好, ${user.name}!`;
   },
 });
@@ -83,6 +83,9 @@ welcomeUser.register();
 const message = await ToolFunc.run('welcomeUser', { userId: '456' });
 console.log(message); // "你好, 张三!"
 ```
+
+> **💡 提示：局部依赖别名**
+> 在 `runAsSync` 或 `runAs` 中，框架会优先匹配 `depends` 映射中的键名（如 `userFetcher`）。这允许您为依赖项定义仅在当前工具内部有效的“局部名称”，而不会污染全局注册表。
 
 ### 生命周期钩子: `setup` 方法
 
@@ -120,11 +123,14 @@ console.log(await ToolFunc.run('statefulTool'));
 
 上下文对象不仅仅是数据的载体，它还是控制工具执行行为的配置集：
 
-- **`isolated`**: `boolean` (可选)。强制为本次调用开启独立的执行作用域。
-- **`inheritContext`**: `boolean` (可选)。控制上下文的自动传播。默认为 `true`。
+- **`isolated`**: `boolean` (可选)。强制为本次调用开启独立的执行作用域。即便 `ctx` 中没有其他属性，设置为 `true` 也会触发影子实例的创建，确保并发安全性。
+- **`inheritContext`**: `boolean` (可选)。控制上下文的自动传播。默认为 `true`。若设为 `false`，则本次调用将拥有一个全新的、不继承父级属性的上下文环境。
 - **`signal`**: `AbortSignal` (可选)。标准 Web API。当外部中止操作时，工具内部可以通过 `this.ctx.signal` 捕获并停止运行。
 - **`aborter`**: `Aborter` (可选)。自定义的中止器，用于在工具内部捕获并停止运行。 `Cancelable` 能力会使用该上下文。
 - **`自定义属性`**: 您可以将任何业务相关的 Metadata（如 `userId`, `traceId`）直接平铺在上下文对象中。
+
+> **⚠️ 关于非纯对象的说明：**
+> 如果您传入的 `ctx` 拥有非标准原型（例如它是某个类的实例），框架会通过 `{...ctx}` 对其进行浅拷贝“展平”，然后再挂载到上下文原型链中。这确保了您可以访问其属性，同时维护了上下文的继承结构。
 
 #### 2. 访问上下文：`static ctx` 与 `instance.ctx`
 

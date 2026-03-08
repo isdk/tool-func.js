@@ -351,8 +351,31 @@ export class ToolFunc extends AdvancePropertyManager {
    */
   static with(ctx: ToolFuncContext): typeof ToolFunc {
     const proxy = Object.create(this);
-    proxy.ctx = ctx;
+    proxy.ctx = this._prepareContext(this.ctx, ctx);
     return proxy;
+  }
+
+  /**
+   * Internal helper to prepare the execution context, maintaining the prototype chain.
+   *
+   * @param {ToolFuncContext} [parentCtx] - The parent context to inherit from.
+   * @param {ToolFuncContext} [ctx] - The new context properties to apply.
+   * @returns {ToolFuncContext} The merged context.
+   * @internal
+   */
+  static _prepareContext(parentCtx?: ToolFuncContext, ctx?: ToolFuncContext): ToolFuncContext {
+    if (ctx?.inheritContext === false || parentCtx?.inheritContext === false) return ctx || {};
+    if (!ctx) return parentCtx || {};
+    if (!parentCtx || parentCtx === Object.prototype) return ctx;
+
+    if (Object.prototype.isPrototypeOf.call(parentCtx, ctx)) return ctx;
+
+    const proto = Object.getPrototypeOf(ctx);
+    if (proto !== Object.prototype && proto !== null) {
+      ctx = { ...ctx };
+    }
+    Object.setPrototypeOf(ctx, parentCtx);
+    return ctx;
   }
 
   /**
@@ -363,7 +386,7 @@ export class ToolFunc extends AdvancePropertyManager {
    */
   with(ctx: ToolFuncContext): this {
     const runner = Object.create(this);
-    runner.ctx = this._prepareContext(undefined, ctx);
+    runner.ctx = (this.constructor as typeof ToolFunc)._prepareContext(this.ctx, ctx);
     return runner;
   }
 
@@ -507,7 +530,8 @@ export class ToolFunc extends AdvancePropertyManager {
   static runWithPos(name: string, ...params: any[]): Promise<any> {
     const func = this.get(name)
     if (func) {
-      return func.runWithPos(...params)
+      const runner = this.ctx ? func.with(this.ctx) : func;
+      return runner.runWithPos(...params)
     }
     throw new NotFoundError(`${name} to run`, this.name);
   }
@@ -522,7 +546,8 @@ export class ToolFunc extends AdvancePropertyManager {
   static runWithPosSync(name: string, ...params: any[]) {
     const func = this.get(name)
     if (func) {
-      return func.runWithPosSync(...params)
+      const runner = this.ctx ? func.with(this.ctx) : func;
+      return runner.runWithPosSync(...params)
     }
     throw new NotFoundError(`${name} to run`, this.name);
   }
@@ -750,11 +775,7 @@ export class ToolFunc extends AdvancePropertyManager {
    * @protected
    */
   protected _prepareContext(params?: any, ctx?: ToolFuncContext): ToolFuncContext {
-    const parentCtx = this.ctx || {};
-    const inherit = ctx?.inheritContext !== false && parentCtx.inheritContext !== false;
-    const result = inherit ? Object.create(parentCtx) : {};
-    if (ctx) { Object.assign(result, ctx); }
-    return result;
+    return (this.constructor as typeof ToolFunc)._prepareContext(this.ctx, ctx);
   }
 
   /**
@@ -815,8 +836,12 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {any} The result of the function execution.
    */
   runAsSync(name:string, params?: any, ctx?: ToolFuncContext) {
-    const result = (this.constructor as any).runSync(name, params, ctx ?? this.ctx)
-    return result
+    const context = (this.constructor as typeof ToolFunc)._prepareContext(this.ctx, ctx);
+    let func = this.depends?.[name] || (this.constructor as any).get(name)
+    if (func) {
+      return func.runSync(params, context)
+    }
+    throw new NotFoundError(`${name} to run`, (this.constructor as any).name);
   }
 
   /**
@@ -858,7 +883,11 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {any} The result of the function execution.
    */
   runWithPosAsSync(name: string, ...params: any[]) {
-    return (this.constructor as any).runWithPosSync(name, ...params)
+    const func = (this.constructor as typeof ToolFunc).get(name)
+    if (func) {
+      return func.runWithPosSync.call(func.with(this.ctx!), ...params)
+    }
+    throw new NotFoundError(`${name} to run`, (this.constructor as any).name);
   }
 
   /**
