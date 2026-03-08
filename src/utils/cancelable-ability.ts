@@ -88,10 +88,11 @@ export class CancelableAbility {
 
   getSemaphore(isReadyFn = this._isReadyFn) {
     let maxTaskConcurrency = this._maxTaskConcurrency!
-    let result = this.__task_semaphore
+    const host = (this as any)._root || this
+    let result = host.__task_semaphore
     if (maxTaskConcurrency > 0 && !result) {
-      if (isReadyFn) {isReadyFn = isReadyFn.bind(this)}
-      result = this.__task_semaphore = new Semaphore(maxTaskConcurrency-1, {isReadyFn})
+      if (isReadyFn) {isReadyFn = isReadyFn.bind(host)}
+      result = host.__task_semaphore = new Semaphore(maxTaskConcurrency-1, {isReadyFn})
     }
     return result
   }
@@ -111,7 +112,8 @@ export class CancelableAbility {
 
   isAborted(taskId?: AsyncTaskId) {
     const isMultiTask = this.hasAsyncFeature(ToolAsyncMultiTaskBit)
-    let aborter = this.__task_aborter as AbortController
+    const host = (this as any)._root || this
+    let aborter = host.__task_aborter as AbortController
     if (aborter) {
       if (isMultiTask) {
         if (taskId != null) {
@@ -126,7 +128,8 @@ export class CancelableAbility {
 
   getRunningTask(taskId?: AsyncTaskId) {
     const isMultiTask = this.hasAsyncFeature(ToolAsyncMultiTaskBit)
-    let aborter: TaskAbortController|undefined = this.__task_aborter as TaskAbortController
+    const host = (this as any)._root || this
+    let aborter: TaskAbortController|undefined = host.__task_aborter as TaskAbortController
     if (aborter) {
       if (isMultiTask) {
         if (taskId != null) {
@@ -138,9 +141,9 @@ export class CancelableAbility {
     }
     if (aborter?.signal.aborted) {
       if (isMultiTask) {
-        (this.__task_aborter as any)[taskId!] = undefined
+        (host.__task_aborter as any)[taskId!] = undefined
       } else {
-        this.__task_aborter = undefined
+        host.__task_aborter = undefined
       }
       aborter = undefined
     }
@@ -150,20 +153,24 @@ export class CancelableAbility {
   getRunningTaskCount() {
     let result: number
     const isMultiTask = this.hasAsyncFeature(ToolAsyncMultiTaskBit)
+    const host = (this as any)._root || this
     if (isMultiTask) {
-      const aborters = this.__task_aborter as {[id: string]:TaskAbortController|undefined}
+      const aborters = host.__task_aborter as {[id: string]:TaskAbortController|undefined}
       result = aborters && Object.entries(aborters).filter(([id, aborter]) => {
         if (aborter?.signal.aborted) {aborters[id]=undefined} else {return true}
       }).length
     } else {
-      const aborter = this.__task_aborter as TaskAbortController
+      const aborter = host.__task_aborter as TaskAbortController
       result = aborter?.signal.aborted ? 0 : 1
     }
     return result
   }
 
   _generateAsyncTaskId(taskId?: AsyncTaskId, aborters?: TaskAbortControllers) {
-    if (!aborters) {aborters = this.__task_aborter as unknown as TaskAbortControllers}
+    if (!aborters) {
+      const host = (this as any)._root || this
+      aborters = host.__task_aborter as unknown as TaskAbortControllers
+    }
     if (taskId == null) {
       // find a free taskId in aborters
       taskId = 0
@@ -188,22 +195,23 @@ export class CancelableAbility {
 
   createAborter(params?: any, taskId?: AsyncTaskId, raiseError = true, ctx?: ToolFuncContext) {
     const isMultiTask = this.hasAsyncFeature(ToolAsyncMultiTaskBit)
+    const host = (this as any)._root || this
     if (!isMultiTask && raiseError && this.getRunningTask()) { throw new CommonError('The task is running', this.name, ErrorCode.TooManyRequests)}
 
     // 优先级：params.aborter > ctx.aborter > new
-    let result: TaskAbortController = params?.aborter || ctx?.aborter || new TaskAbortController(this)
+    let result: TaskAbortController = params?.aborter || ctx?.aborter || new TaskAbortController(host)
     if (!(result instanceof TaskAbortController)) {
       if ((result as any) instanceof AbortController) {
         Object.setPrototypeOf(result, TaskAbortController.prototype)
-        defineProperty(result, 'parent', this)
+        defineProperty(result, 'parent', host)
       } else {
         throw new CommonError('aborter should be an AbortController', this.name, ErrorCode.InvalidArgument)
       }
     }
 
     if (isMultiTask) {
-      if (this.__task_aborter == null) { this.__task_aborter = {} }
-      const aborters = this.__task_aborter as unknown as TaskAbortControllers
+      if (host.__task_aborter == null) { host.__task_aborter = {} }
+      const aborters = host.__task_aborter as unknown as TaskAbortControllers
 
       if (taskId == null) {
         taskId = this.generateAsyncTaskId(taskId, aborters)
@@ -212,7 +220,7 @@ export class CancelableAbility {
 
       aborters[taskId] = result
     } else {
-      this.__task_aborter = result
+      host.__task_aborter = result
     }
 
     // 2) 链接外部信号
@@ -220,6 +228,7 @@ export class CancelableAbility {
       ...toSignalArray(params?.signal),
       ...toSignalArray(params?.signals),
       ...toSignalArray(ctx?.signal),
+      ...toSignalArray(ctx?.signals),
     ];
     if (extSignals.length) {
       linkAnyAbort(result, extSignals);
@@ -229,7 +238,9 @@ export class CancelableAbility {
     if (timeout > 0) {
       result.timeoutId = setTimeout(() => {
         result.timeoutId = undefined
-        this.abort('timeout', {timeout})
+        const data: any = {timeout}
+        if (isMultiTask) { data.taskId = result.id }
+        this.abort('timeout', data)
       }, timeout)
     }
 
@@ -265,11 +276,12 @@ export class CancelableAbility {
 
   cleanTaskAborter(aborter: TaskAbortController) {
     const isMultiTask = this.hasAsyncFeature(ToolAsyncMultiTaskBit)
+    const host = (this as any)._root || this
     if (isMultiTask) {
-      const aborters = this.__task_aborter as unknown as TaskAbortControllers
+      const aborters = host.__task_aborter as unknown as TaskAbortControllers
       this.cleanMultiTaskAborter(aborter.id!, aborters)
     } else {
-      this.__task_aborter = undefined
+      host.__task_aborter = undefined
     }
   }
 
@@ -332,7 +344,8 @@ export class CancelableAbility {
   }
 
   abort(reason?: string, data?: any) {
-    let aborter = this.__task_aborter as TaskAbortController
+    const host = (this as any)._root || this
+    let aborter = host.__task_aborter as TaskAbortController
     if (aborter) {
       const isMultiTask = this.hasAsyncFeature(ToolAsyncMultiTaskBit)
       if (isMultiTask) {
@@ -345,7 +358,7 @@ export class CancelableAbility {
           throw new CommonError('Missing data.taskId', this.name + '.abort', ErrorCode.InvalidArgument)
         }
       } else {
-        this.__task_aborter = undefined
+        host.__task_aborter = undefined
       }
 
       if (aborter && !aborter.signal.aborted) {
@@ -361,7 +374,8 @@ export class CancelableAbility {
     const Super = (this as any).super;
     const that = (this as any).self || this;
     if (Super && Super.call(that, params, ctx)) return true;
-    return that.hasAsyncFeature(AsyncFeatures.Cancelable);
+    if (Object.prototype.hasOwnProperty.call(that, 'ctx')) return false;
+    return that.hasAsyncFeature(AsyncFeatureBits.Cancelable);
   }
 
   /**
@@ -372,13 +386,14 @@ export class CancelableAbility {
     const that = (this as any).self || this;
     const result = Super ? Super.call(that, params, ctx) : (ctx || {});
 
-    if (that.hasAsyncFeature(AsyncFeatures.Cancelable) && !result.aborter) {
+    if (that.hasAsyncFeature(AsyncFeatureBits.Cancelable) && !result.aborter) {
       result.aborter = params?.aborter || result.aborter || new TaskAbortController(that as any);
       // Link external signals if any
       const extSignals = [
         ...toSignalArray(params?.signal),
         ...toSignalArray(params?.signals),
         ...toSignalArray(result.signal),
+        ...toSignalArray(result.signals),
       ];
       if (extSignals.length) {
         linkAnyAbort(result.aborter, extSignals);

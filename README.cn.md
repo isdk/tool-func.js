@@ -126,7 +126,8 @@ console.log(await ToolFunc.run('statefulTool'));
 - **`isolated`**: `boolean` (可选)。强制为本次调用开启独立的执行作用域。即便 `ctx` 中没有其他属性，设置为 `true` 也会触发影子实例的创建，确保并发安全性。
 - **`inheritContext`**: `boolean` (可选)。控制上下文的自动传播。默认为 `true`。若设为 `false`，则本次调用将拥有一个全新的、不继承父级属性的上下文环境。
 - **`signal`**: `AbortSignal` (可选)。标准 Web API。当外部中止操作时，工具内部可以通过 `this.ctx.signal` 捕获并停止运行。
-- **`aborter`**: `Aborter` (可选)。自定义的中止器，用于在工具内部捕获并停止运行。 `Cancelable` 能力会使用该上下文。
+- **`signals`**: `AbortSignal[]` (可选)。支持传入多个中止信号，其中任何一个信号中止都会触发任务停止。
+- **`aborter`**: `Aborter` (可选)。自定义的中止器。`Cancelable` 能力会自动在此处注入并管理任务生命周期。
 - **`自定义属性`**: 您可以将任何业务相关的 Metadata（如 `userId`, `traceId`）直接平铺在上下文对象中。
 
 > **⚠️ 关于非纯对象的说明：**
@@ -142,20 +143,22 @@ console.log(await ToolFunc.run('statefulTool'));
 > **💡 架构设计权衡：为什么不“平铺”上下文？**
 > 我们严禁将上下文数据直接挂载到 `this`（如 `this.user`）。因为 `ToolFunc` 实例拥有 `name`, `params`, `title` 等核心元数据。如果上下文里恰巧也有一个 `name` 字段，直接平铺会彻底摧毁工具的定义，导致难以排查的 Bug。`this.ctx` 提供了安全的隔离空间。
 
-#### 3. 核心机制：影子实例 (Shadow Instance)
+#### 3. 核心机制：影子实例 (Shadow Instance) 与 根追踪 (_root)
 
 这是本框架最精妙的设计。为了解决并发冲突，我们没有使用笨重的深拷贝，而是利用了 JavaScript 的**原型链 (Prototype Chain)**。
 
 当您调用 `tool.with({ user: 'Alice' }).run()` 时：
 
 1. **创建影子**：框架执行 `Object.create(tool)`。
-2. **注入属性**：在产生的影子对象上挂载 `ctx: { user: 'Alice' }`。
-3. **逻辑执行**：影子对象执行 `func`。此时 `this` 指向影子对象，因此 `this.ctx` 返回 Alice；同时，因为原型链的存在，`this.name` 依然能正确访问到原工具定义的名称。
+2. **根追踪**：每个影子实例内部都有一个隐藏的 `_root` 属性指向原始工具实例。这确保了即便在复杂的嵌套影子中，并发控制状态（如信号量、运行中任务数）依然能由原始工具统一管理，避免“状态漂移”。
+3. **注入属性**：在产生的影子对象上挂载 `ctx: { user: 'Alice' }`。
+4. **逻辑执行**：影子对象执行 `func`。此时 `this` 指向影子对象，因此 `this.ctx` 返回 Alice；同时，因为原型链的存在，`this.name` 依然能正确访问到原工具定义的名称。
 
 **这种设计的优势：**
 
 - **内存极低**：影子对象只是一个极薄的属性层，不持有逻辑副本。
 - **并发安全**：每个影子对象都是独立的。100 个并发请求对应 100 个影子对象，互不干扰。
+- **状态同步**：通过 `_root` 确保了单实例并发上限（`maxTaskConcurrency`）的全局有效性。
 - **动态继承**：您可以连续调用 `.with().with()`，上下文会形成链式继承。
 
 #### 4. Fluent API 的双重形态
@@ -201,19 +204,19 @@ await runner.run({ id: 789 });
   - **判断逻辑**：
     1. 如果用户传入了 `ctx`，则必须隔离以应用这些覆盖。
     2. 如果当前实例已经是一个影子实例（拥有自己的 `ctx` 属性），且用户没有传入新的 `ctx`，则不再重复隔离，直接复用。
-    3. 如果实例拥有“预设上下文”（通过 `.with()` 设置），则必须隔离。
+    3. 如果工具开启了 `Cancelable` 等异步特性，为了确保中止器隔离，必须强制隔离。
   - **自定义场景**：您可以重写此方法，根据 `params` 中的特定字段（如 `forceNewScope: true`）来强制开启隔离。
 
-- **`_prepareContext(params, ctx)`**: **上下文的“加工工厂”**。
-  - **作用**：在影子实例创建后，负责构建该实例最终持有的 `this.ctx` 对象。
-  - **核心逻辑——原型继承**：
-    1. 它首先获取“父级上下文”（即当前实例已有的 `this.ctx`）。
-    2. 如果 `inheritContext` 配置为 `true`（默认值），它会执行 `Object.create(parentCtx)`。
-    3. 这样，新上下文就“继承”了父级的所有属性（如 `traceId`），但又提供了一个空的顶层空间。
-    4. 最后，将用户显式传入的 `ctx` 覆盖到这个新对象的顶层。
-  - **自定义场景**：插件（如 `Cancelable`）会重写此方法，在这里自动往 `this.ctx` 中注入 `aborter` 或 `logger` 实例，从而实现对业务逻辑透明的功能注入。
+  - **`_prepareContext(params, ctx)`**: **上下文的“加工工厂”**。
+    - **作用**：在影子实例创建后，负责构建该实例最终持有的 `this.ctx` 对象。
+    - **核心逻辑——原型继承**：
+      1. 它首先获取“父级上下文”（即当前实例已有的 `this.ctx`）。
+      2. 如果 `inheritContext` 配置为 `true`（默认值），它会执行 `Object.create(parentCtx)` 实现属性继承。
+      3. **自动能力注入**：例如 `Cancelable` 插件会重写此方法，在这里自动往 `this.ctx` 中注入 `aborter` 实例，并链接外部 `signal/signals`。
+      4. 最后，将用户显式传入的 `ctx` 覆盖到这个新对象的顶层。
+    - **自定义场景**：插件（如自动日志）会重写此方法，自动注入 `logger` 实例，从而实现对业务逻辑透明的功能注入。
 
-> **⚠️ 注意**：在重写这些方法时，务必调用 `super._shouldIsolate` 或 `super._prepareContext` 以保证框架核心功能的正常运行。
+  > **⚠️ 注意**：在重写这些方法时，务必调用 `super._shouldIsolate` 或 `super._prepareContext` 以保证框架核心功能的正常运行。
 
 #### 6. 上下文的自动传播 (Propagation)
 

@@ -386,7 +386,7 @@ export class ToolFunc extends AdvancePropertyManager {
    */
   with(ctx: ToolFuncContext): this {
     const runner = Object.create(this);
-    runner.ctx = (this.constructor as typeof ToolFunc)._prepareContext(this.ctx, ctx);
+    runner.ctx = this._prepareContext(undefined, ctx);
     return runner;
   }
 
@@ -672,6 +672,7 @@ export class ToolFunc extends AdvancePropertyManager {
         break
     }
     this.name = name = options.name as string
+    Object.defineProperty(this, '_root', { get: ()=>this, set(v){}, enumerable: false });
     // const ctor = this.constructor as unknown as typeof ToolFunc;
     // if (ctor.items[name]) {
     //   throw new AlreadyExistsError(`Function ${name}`, ToolFunc.name)
