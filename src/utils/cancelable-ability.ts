@@ -156,9 +156,14 @@ export class CancelableAbility {
     const host = (this as any)._origin || this
     if (isMultiTask) {
       const aborters = host.__task_aborter as {[id: string]:TaskAbortController|undefined}
-      result = aborters && Object.entries(aborters).filter(([id, aborter]) => {
-        if (aborter?.signal.aborted) {aborters[id]=undefined} else {return true}
-      }).length
+      result = aborters ? Object.entries(aborters).filter(([id, aborter]) => {
+        if (!aborter) return false
+        if (aborter.signal.aborted) {
+          aborters[id] = undefined
+          return false
+        }
+        return true
+      }).length : 0
     } else {
       const aborter = host.__task_aborter as TaskAbortController
       result = aborter?.signal.aborted ? 0 : 1
@@ -232,7 +237,11 @@ export class CancelableAbility {
       ...toSignalArray(ctx?.signals),
     ];
     if (extSignals.length) {
-      linkAnyAbort(result, extSignals);
+      const cleanup = linkAnyAbort(result, extSignals);
+      if (ctx) {
+        const oldCleanup = (ctx as any)._linkCleanup;
+        (ctx as any)._linkCleanup = oldCleanup ? () => { cleanup?.(); oldCleanup(); } : cleanup;
+      }
     }
 
     const timeout = params?.timeout || ctx?.timeout
@@ -299,7 +308,7 @@ export class CancelableAbility {
       params.aborter = aborter
     }
 
-    let taskPromise: TaskPromise<Output> = runTask(params, aborter)
+    const taskPromise: TaskPromise<Output> = runTask(params, aborter)
     .then((result: any) => {
       if (result && result instanceof ReadableStream) {
         const onStart = (controller) => { defineProperty(aborter, 'streamController', controller) }
@@ -323,6 +332,11 @@ export class CancelableAbility {
       if (aborter.timeoutId) {
         clearTimeout(aborter.timeoutId)
         aborter.timeoutId = undefined
+      }
+      const ctx = (this as any).ctx
+      if (ctx?._linkCleanup) {
+        ctx._linkCleanup()
+        ctx._linkCleanup = undefined
       }
     })
     taskPromise.task = aborter
@@ -404,7 +418,9 @@ export class CancelableAbility {
         ...toSignalArray(result.signals),
       ];
       if (extSignals.length) {
-        linkAnyAbort(aborter, extSignals);
+        const cleanup = linkAnyAbort(aborter, extSignals);
+        const oldCleanup = result._linkCleanup;
+        result._linkCleanup = oldCleanup ? () => { cleanup?.(); oldCleanup(); } : cleanup;
       }
     }
     return result;
@@ -463,7 +479,7 @@ function linkAnyAbort(aborter: TaskAbortController, externalSignals: AbortSignal
   if (already) {
     const reason = (already as any).reason;
     try { aborter.abort(reason || 'aborted'); } catch {}
-    return; // 内部 abort 会触发 handleAborterAborted 清理
+    return handleAborterAborted; // 内部 abort 会触发 handleAborterAborted 清理
   }
 
   // 监听任一外部 signal
@@ -480,6 +496,8 @@ function linkAnyAbort(aborter: TaskAbortController, externalSignals: AbortSignal
   const onInner = () => handleAborterAborted();
   aborter.signal.addEventListener('abort', onInner, { once: true });
   offs.push(() => aborter.signal.removeEventListener('abort', onInner));
+
+  return handleAborterAborted;
 }
 
 function toSignalArray(sig?: AbortSignal | AbortSignal[] | null): AbortSignal[] {

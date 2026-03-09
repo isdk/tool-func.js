@@ -539,4 +539,132 @@ describe('CancelableAbility', () => {
     await expect(taskPromise).rejects.toThrow(AbortError);
     await expect(taskPromise).rejects.toHaveProperty('message', expect.stringMatching(/external abort 3/));
   });
-})
+
+  it('should perform lazy cleanup in getRunningTaskCount and getRunningTask', async () => {
+    const p1 = testMultiTask.run({ waitTime: 100 }) as TaskPromise
+    const taskId = p1.task!.id!
+    const host = (testMultiTask as any)._origin || testMultiTask
+    const aborters = host.__task_aborter as any
+
+    expect(aborters[taskId]).toBeDefined()
+
+    // 手动中止任务，但不清理 Map
+    p1.task!.abort('test-cleanup')
+
+    // getRunningTask 应该返回 undefined 并触发清理 Map
+    expect(testMultiTask.getRunningTask(taskId)).toBeUndefined()
+    expect(aborters[taskId]).toBeUndefined()
+
+    // getRunningTaskCount 也应触发清理
+    const p2 = testMultiTask.run({ waitTime: 100 }) as TaskPromise
+    const id2 = p2.task!.id!
+    p2.task!.abort('test-cleanup-2')
+
+    expect(testMultiTask.getRunningTaskCount()).toBe(0)
+    expect(aborters[id2]).toBeUndefined()
+
+    await expect(p1).rejects.toThrow()
+    await expect(p2).rejects.toThrow()
+  })
+
+  it('should abort specific task via instance method and throw on missing taskId', async () => {
+    const p1 = testMultiTask.run({ waitTime: 100 }) as TaskPromise
+    const id1 = p1.task!.id
+
+    // 测试精准中止
+    testMultiTask.abort('targeted', { taskId: id1 })
+    await expect(p1).rejects.toThrow(/targeted/)
+
+    // 多任务模式下缺失 taskId 应抛错
+    expect(() => testMultiTask.abort('no-id')).toThrow('Missing data.taskId')
+
+    // isAborted 缺失 taskId 应抛错
+    expect(() => testMultiTask.isAborted()).toThrow('Missing taskId')
+  })
+
+  it('should handle alreadyRejected flag in throwIfAborted', () => {
+    const aborter = new TaskAbortController(testSingleTask as any)
+    aborter.abort('initial')
+
+    // 标准抛出
+    expect(() => aborter.throwIfAborted()).toThrow('initial')
+
+    // 当 signal 标记为 alreadyRejected 时，不抛出异常而是返回 true
+    const signal = aborter.signal as any
+    signal.alreadyRejected = true
+    expect(aborter.throwIfAborted()).toBe(true)
+    expect(() => aborter.throwIfAborted()).not.toThrow()
+
+    // 显式传参测试
+    signal.alreadyRejected = false
+    expect(aborter.throwIfAborted(true)).toBe(true)
+  })
+
+  it('should handle errors in isReadyFn and release semaphore', async () => {
+    const isReadyFn = async () => {
+      throw new Error('ready-fail')
+    }
+
+    class TestFailReadyFunc extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async () => 'ok', { isReadyFn })
+      }
+    }
+    makeToolFuncCancelable(TestFailReadyFunc, { maxTaskConcurrency: 1 })
+    const tool = new TestFailReadyFunc('testFailReady')
+
+    await expect(tool.run({})).rejects.toThrow('ready-fail')
+
+    // 即使 isReadyFn 失败，信号量也应被正确释放（通过 finally 机制）
+    expect(tool.semaphore!.activeCount).toBe(0)
+  })
+
+  it('should clean up external signal listeners when task finishes', async () => {
+    const extAborter = new AbortController()
+    const removeSpy = jest.spyOn(extAborter.signal, 'removeEventListener')
+
+    await testSingleTask.run({ signal: extAborter.signal, waitTime: 10 })
+
+    // 任务结束后应移除对外部信号的监听，防止内存泄漏
+    expect(removeSpy).toHaveBeenCalled()
+    })
+
+    it('should find the next free numeric taskId', () => {
+    const aborters: any = { 0: {}, 1: {}, 2: {} }
+    const id = (testMultiTask as any)._generateAsyncTaskId(null, aborters)
+    expect(id).toBe(3)
+    })
+
+    it('should not leak listeners when multiple links occur (context + params)', async () => {
+    const extSignal = new AbortController().signal
+    const addSpy = jest.spyOn(extSignal, 'addEventListener')
+    const removeSpy = jest.spyOn(extSignal, 'removeEventListener')
+
+    // 同时在 context 和 params 中传入同一个 signal，触发双重链接
+    // Note: tool.run(params, ctx) will call _prepareContext then createAborter
+    await testSingleTask.run({ signal: extSignal }, { signal: extSignal })
+
+    // 验证 add 和 remove 的调用次数是否相等（确保清理无死角）
+    expect(addSpy).toHaveBeenCalled()
+    expect(removeSpy).toHaveBeenCalledTimes(addSpy.mock.calls.length)
+    })
+
+    it('should delete key for string taskId in _cleanMultiTaskAborter', () => {
+    const aborters: any = { 'id-1': {} }
+    ;(testMultiTask as any)._cleanMultiTaskAborter('id-1', aborters)
+    expect(aborters).not.toHaveProperty('id-1')
+    expect(Object.keys(aborters)).toHaveLength(0)
+    })
+
+    it('should throw AbortError with custom reason string in throwIfAborted', () => {
+    const aborter = new TaskAbortController(testSingleTask as any)
+    // 模拟非 Error 对象的 abort
+    aborter.abort('just a string')
+    try {
+      aborter.throwIfAborted()
+    } catch (e: any) {
+      expect(e).toBeInstanceOf(AbortError)
+      expect(e.message).toContain('just a string')
+    }
+    })
+    });
