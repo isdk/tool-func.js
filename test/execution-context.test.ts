@@ -315,6 +315,46 @@ describe('ToolFunc Execution Context', () => {
       tool.runSync({}, { isolated: true });
       expect(spy).toReturnWith(true);
     });
+
+    it('should NOT isolate if isolated: false is explicitly provided, even with ctx', () => {
+      const tool = new ToolFunc({ name: 'test', func: () => 'ok' });
+      const spy = vi.spyOn(tool as any, '_shouldIsolate');
+      
+      // Explicitly passing isolated: false should have highest priority
+      const result = tool.runSync({}, { val: 1, isolated: false });
+      expect(spy).toReturnWith(false);
+      // Since it's not isolated, 'this' in func would be the tool itself, 
+      // but runSync applies the ctx to the runner it creates. 
+      // If no runner is created, ctx passed to runSync is not applied to 'this'.
+    });
+  });
+
+  describe('Object Safety and Rationale Checks', () => {
+    it('should protect the original ctx object from prototype pollution', () => {
+      const tool = new ToolFunc({ name: 'test', func: () => {} });
+      const myCtx = { a: 1 };
+      const originalProto = Object.getPrototypeOf(myCtx);
+      
+      tool.runSync({}, myCtx);
+      
+      // Ensure the framework didn't call setPrototypeOf on our original object
+      expect(Object.getPrototypeOf(myCtx)).toBe(originalProto);
+    });
+
+    it('should ensure _origin always points to the Root instance across deep shadows', () => {
+      const tool = new ToolFunc({ name: 'rootTool', func: () => {} });
+      const shadow1 = tool.with({ a: 1 });
+      const shadow2 = shadow1.with({ b: 2 });
+      const shadow3 = shadow2.with({ c: 3 });
+
+      expect(shadow1._origin).toBe(tool);
+      expect(shadow2._origin).toBe(tool);
+      expect(shadow3._origin).toBe(tool);
+      
+      // Even if someone tries to overwrite it (due to empty setter)
+      (shadow3 as any)._origin = { fake: true };
+      expect(shadow3._origin).toBe(tool);
+    });
   });
 
   describe('Context and Dependencies', () => {

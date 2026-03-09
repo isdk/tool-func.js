@@ -362,20 +362,33 @@ export class ToolFunc extends AdvancePropertyManager {
    * @param {ToolFuncContext} [ctx] - The new context properties to apply.
    * @returns {ToolFuncContext} The merged context.
    * @internal
+   *
+   * DANGER - DO NOT "OPTIMIZE" UNLESS YOU UNDERSTAND:
+   * 1. Why NOT Object.assign(target, ctx) alone?
+   *    Object.assign only copies 'own' properties. In nested calls (e.g., .with().with()),
+   *    parent properties exist on the prototype. Using assign would drop all inherited
+   *    context data (like traceId from a parent runner).
+   * 2. Why NOT Object.setPrototypeOf?
+   *    It's a heavy performance killer in V8. We use Object.create(proto) instead.
+   * 3. Why check isPrototypeOf?
+   *    If ctx is already in the chain, we return it to maintain identity and avoid
+   *    redundant shadow layers, which is required by many AOP plugins and unit tests.
    */
   static _prepareContext(parentCtx?: ToolFuncContext, ctx?: ToolFuncContext): ToolFuncContext {
-    if (ctx?.inheritContext === false || parentCtx?.inheritContext === false) return ctx || {};
-    if (!ctx) return parentCtx || {};
-    if (!parentCtx || parentCtx === Object.prototype) return ctx;
+    if (ctx?.inheritContext === false || parentCtx?.inheritContext === false) return ctx ? { ...ctx } : {};
 
-    if (Object.prototype.isPrototypeOf.call(parentCtx, ctx)) return ctx;
+    if (!ctx) return parentCtx && parentCtx !== Object.prototype ? Object.create(parentCtx) : {};
 
-    const proto = Object.getPrototypeOf(ctx);
-    if (proto !== Object.prototype && proto !== null) {
-      ctx = { ...ctx };
+    if (parentCtx && parentCtx !== Object.prototype && Object.prototype.isPrototypeOf.call(parentCtx, ctx)) {
+      return ctx;
     }
-    Object.setPrototypeOf(ctx, parentCtx);
-    return ctx;
+
+    if (!parentCtx || parentCtx === Object.prototype) {
+      return ctx;
+    }
+
+    // High-performance shadow creation: create with proto, then mix-in new overrides.
+    return Object.assign(Object.create(parentCtx), ctx);
   }
 
   /**
@@ -672,7 +685,21 @@ export class ToolFunc extends AdvancePropertyManager {
         break
     }
     this.name = name = options.name as string
-    Object.defineProperty(this, '_root', { get: ()=>this, set(v){}, enumerable: false });
+    /**
+     * _origin always points to the Root ToolFunc instance (the one created via 'new').
+     * RATIONALE:
+     * 1. State Persistence: Concurrent states like semaphores and task pools MUST stay on the root.
+     * 2. Closure Binding: Using '() => this' in the constructor locks the reference to the root instance,
+     *    ensuring that even deep shadow chains (Object.create) can always trace back to the same origin.
+     * 3. Vitest Compatibility: The no-op setter and 'configurable: true' prevent TypeError during
+     *    Vitest's deep diffing/proxying processes when a test fails.
+     */
+    Object.defineProperty(this, '_origin', {
+      get: () => this,
+      set: (v) => {},
+      enumerable: false,
+      configurable: true
+    });
     // const ctor = this.constructor as unknown as typeof ToolFunc;
     // if (ctor.items[name]) {
     //   throw new AlreadyExistsError(`Function ${name}`, ToolFunc.name)
@@ -758,22 +785,31 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {boolean} `true` if a shadow instance should be created, otherwise `false`.
    * @protected
    */
+  /**
+   * Determines if the function execution should be isolated into a "Shadow Instance".
+   *
+   * PRIORITY LOGIC:
+   * 1. Explicit 'ctx.isolated' in the current call (Highest).
+   * 2. Any explicit 'ctx' provided (Safe default: isolate to apply new overrides).
+   * 3. Prevention of recursion (If already an own 'ctx' property exists).
+   * 4. Inherited 'this.ctx.isolated' configuration.
+   * 5. Presence of any inherited context (Default: isolate for concurrency safety).
+   */
   protected _shouldIsolate(params?: any, ctx?: ToolFuncContext): boolean {
+    if (ctx?.isolated !== undefined) return ctx.isolated;
     if (ctx) return true;
     // If already isolated (own property ctx), no need to isolate again.
     if (Object.prototype.hasOwnProperty.call(this, 'ctx')) return false;
+    if (this.ctx?.isolated !== undefined) return this.ctx.isolated;
     return !!this.ctx;
   }
 
   /**
    * Creates the final execution context (`this.ctx`) for a Shadow Instance.
-   * It handles context inheritance from the parent instance and merges user-provided overrides
-   * from the current call.
    *
-   * @param {any} [params] - The runtime parameters for the function call.
-   * @param {ToolFuncContext} [ctx] - The optional execution context provided by the user for this specific call, used as overrides.
-   * @returns {ToolFuncContext} The prepared, merged context for the new shadow instance.
-   * @protected
+   * NOTE: We MUST use 'this._prepareContext' (instance path) instead of
+   * 'Static._prepareContext' to allow AOP plugins (like CancelableAbility)
+   * to hook into context preparation via method overloading ($_prepareContext).
    */
   protected _prepareContext(params?: any, ctx?: ToolFuncContext): ToolFuncContext {
     return (this.constructor as typeof ToolFunc)._prepareContext(this.ctx, ctx);
@@ -837,7 +873,8 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {any} The result of the function execution.
    */
   runAsSync(name:string, params?: any, ctx?: ToolFuncContext) {
-    const context = (this.constructor as typeof ToolFunc)._prepareContext(this.ctx, ctx);
+    // IMPORTANT: Must use the instance method to ensure plugin hooks are triggered.
+    const context = this._prepareContext(params, ctx);
     let func = this.depends?.[name] || (this.constructor as any).get(name)
     if (func) {
       return func.runSync(params, context)

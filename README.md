@@ -143,14 +143,14 @@ The framework maintains `ctx` properties at both the class level (static) and ob
 > **💡 Architectural Trade-off: Why not "flatten" context?**
 > We strictly forbid mounting context data directly on `this` (e.g., `this.user`). This is because `ToolFunc` instances have core metadata like `name`, `params`, `title`, etc. If the context happened to have a `name` field, flattening it would destroy the tool definition and lead to hard-to-debug bugs. `this.ctx` provides a safe isolated space.
 
-#### 3. Core Mechanism: Shadow Instance and Root Tracking (_root)
+#### 3. Core Mechanism: Shadow Instance and Root Tracking (_origin)
 
 This is the most ingenious design of this framework. To solve concurrency conflicts, we don't use heavy deep cloning, but leverage JavaScript's **Prototype Chain**.
 
 When you call `tool.with({ user: 'Alice' }).run()`:
 
 1. **Create Shadow**: The framework executes `Object.create(tool)`.
-2. **Root Tracking**: Every shadow instance has a hidden `_root` property pointing to the original tool instance. This ensures that even in complex nested shadows, concurrency control state (like semaphores, running task counts) is still managed by the original tool, avoiding "state drift".
+2. **Root Tracking**: Every shadow instance has a hidden `_origin` property pointing to the original tool instance. This ensures that even in complex nested shadows, concurrency control state (like semaphores, running task counts) is still managed by the original tool, avoiding "state drift".
 3. **Inject Properties**: Mount `ctx: { user: 'Alice' }` on the resulting shadow object.
 4. **Logic Execution**: The shadow object executes `func`. At this point, `this` points to the shadow object, so `this.ctx` returns Alice; meanwhile, thanks to the prototype chain, `this.name` still correctly accesses the name defined in the original tool.
 
@@ -158,7 +158,7 @@ When you call `tool.with({ user: 'Alice' }).run()`:
 
 - **Extremely Low Memory**: Shadow objects are just a very thin layer of properties and don't hold logic copies.
 - **Concurrency Safety**: Each shadow object is independent. 100 concurrent requests correspond to 100 shadow objects, without interference.
-- **State Synchronization**: Ensures global validity of single-instance concurrency limits (`maxTaskConcurrency`) via `_root`.
+- **State Synchronization**: Ensures global validity of single-instance concurrency limits (`maxTaskConcurrency`) via `_origin`.
 - **Dynamic Inheritance**: You can call `.with().with()` continuously, forming a chain of context inheritance.
 
 #### 4. Dual Forms of Fluent API

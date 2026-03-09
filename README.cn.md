@@ -81,7 +81,7 @@ const welcomeUser = new ToolFunc({
 welcomeUser.register();
 
 const message = await ToolFunc.run('welcomeUser', { userId: '456' });
-console.log(message); // "你好, 张三!"
+console.log(message); // 输出: "你好, 张三!"
 ```
 
 > **💡 提示：局部依赖别名**
@@ -106,11 +106,11 @@ const statefulTool = new ToolFunc({
   }
 });
 
-console.log(statefulTool.customState); // "configured"
+console.log(statefulTool.customState); // 输出: "configured"
 
 statefulTool.register();
 console.log(await ToolFunc.run('statefulTool'));
-// "状态: configured, 初始化于: ..."
+// 输出: "状态: configured, 初始化于: ..."
 ```
 
 ### 执行上下文 (Context) 与 并发隔离
@@ -143,22 +143,22 @@ console.log(await ToolFunc.run('statefulTool'));
 > **💡 架构设计权衡：为什么不“平铺”上下文？**
 > 我们严禁将上下文数据直接挂载到 `this`（如 `this.user`）。因为 `ToolFunc` 实例拥有 `name`, `params`, `title` 等核心元数据。如果上下文里恰巧也有一个 `name` 字段，直接平铺会彻底摧毁工具的定义，导致难以排查的 Bug。`this.ctx` 提供了安全的隔离空间。
 
-#### 3. 核心机制：影子实例 (Shadow Instance) 与 根追踪 (_root)
+#### 3. 核心机制：影子实例 (Shadow Instance) 与 原始追踪 (_origin)
 
 这是本框架最精妙的设计。为了解决并发冲突，我们没有使用笨重的深拷贝，而是利用了 JavaScript 的**原型链 (Prototype Chain)**。
 
 当您调用 `tool.with({ user: 'Alice' }).run()` 时：
 
 1. **创建影子**：框架执行 `Object.create(tool)`。
-2. **根追踪**：每个影子实例内部都有一个隐藏的 `_root` 属性指向原始工具实例。这确保了即便在复杂的嵌套影子中，并发控制状态（如信号量、运行中任务数）依然能由原始工具统一管理，避免“状态漂移”。
-3. **注入属性**：在产生的影子对象上挂载 `ctx: { user: 'Alice' }`。
+2. **原始追踪**：每个影子实例内部都有一个隐藏的 `_origin` 属性指向最顶层的原始工具实例（即通过 `new ToolFunc()` 创建的那个对象）。这确保了即便在复杂的嵌套影子中，并发控制状态（如信号量、运行中任务数）依然能由原始工具统一管理，避免“状态漂移”。
+3. **注入上下文**：在产生的影子对象上挂载 `ctx`。为了保护用户传入的原始 `ctx` 对象不被修改，框架会通过 `Object.create(parentCtx)` 和属性合并创建一个新对象作为本次调用的 `this.ctx`。
 4. **逻辑执行**：影子对象执行 `func`。此时 `this` 指向影子对象，因此 `this.ctx` 返回 Alice；同时，因为原型链的存在，`this.name` 依然能正确访问到原工具定义的名称。
 
 **这种设计的优势：**
 
 - **内存极低**：影子对象只是一个极薄的属性层，不持有逻辑副本。
 - **并发安全**：每个影子对象都是独立的。100 个并发请求对应 100 个影子对象，互不干扰。
-- **状态同步**：通过 `_root` 确保了单实例并发上限（`maxTaskConcurrency`）的全局有效性。
+- **状态同步**：通过 `_origin` 确保了单实例并发上限（`maxTaskConcurrency`）的全局有效性。
 - **动态继承**：您可以连续调用 `.with().with()`，上下文会形成链式继承。
 
 #### 4. Fluent API 的双重形态
@@ -198,25 +198,22 @@ await runner.run({ id: 789 });
 
 如果您正在开发 AoP (面向切面) 插件（如：自动日志、权限拦截、性能追踪），或者需要自定义工具的隔离行为，您需要深入理解以下两个核心内部钩子。它们是框架扩展性的基石：
 
-- **`_shouldIsolate(params, ctx)`**: **影子实例的“准入开关”**。
-  - **作用**：决定本次调用是否需要创建一个全新的影子实例。
-  - **`ctx` 参数**：特指用户在调用 `run(params, ctx)` 或 `runSync(params, ctx)` 时显式传入的“调用时上下文”。
-  - **判断逻辑**：
-    1. 如果用户传入了 `ctx`，则必须隔离以应用这些覆盖。
-    2. 如果当前实例已经是一个影子实例（拥有自己的 `ctx` 属性），且用户没有传入新的 `ctx`，则不再重复隔离，直接复用。
-    3. 如果工具开启了 `Cancelable` 等异步特性，为了确保中止器隔离，必须强制隔离。
-  - **自定义场景**：您可以重写此方法，根据 `params` 中的特定字段（如 `forceNewScope: true`）来强制开启隔离。
+- **`_shouldIsolate(params, ctx)`**: **影子实例的“准入开关”**。决定本次调用是否需要创建一个全新的影子实例。
+  - **优先级判定逻辑**：
+    1. **最高优先级**：显式传入的 `ctx.isolated`。如果为 `true`，强制隔离。
+    2. **安全模式**：只要调用时传入了任何 `ctx` 覆盖属性，默认隔离以确保应用新环境且不污染原型。
+    3. **递归保护**：如果当前实例已经是一个影子实例（拥有自有属性 `ctx`），且没有新的隔离要求，则复用现有实例，避免无限嵌套。
+    4. **预置配置**：检查实例原型链上预设的 `this.ctx.isolated` 配置。
+    5. **兜底**：如果存在任何有效的上下文，默认开启并发安全隔离。
 
-  - **`_prepareContext(params, ctx)`**: **上下文的“加工工厂”**。
-    - **作用**：在影子实例创建后，负责构建该实例最终持有的 `this.ctx` 对象。
-    - **核心逻辑——原型继承**：
-      1. 它首先获取“父级上下文”（即当前实例已有的 `this.ctx`）。
-      2. 如果 `inheritContext` 配置为 `true`（默认值），它会执行 `Object.create(parentCtx)` 实现属性继承。
-      3. **自动能力注入**：例如 `Cancelable` 插件会重写此方法，在这里自动往 `this.ctx` 中注入 `aborter` 实例，并链接外部 `signal/signals`。
-      4. 最后，将用户显式传入的 `ctx` 覆盖到这个新对象的顶层。
-    - **自定义场景**：插件（如自动日志）会重写此方法，自动注入 `logger` 实例，从而实现对业务逻辑透明的功能注入。
+- **`_prepareContext(params, ctx)`**: **上下文的“加工工厂”**。负责构建影子实例最终持有的 `this.ctx` 对象。
+  - **核心步骤**：
+    1. **获取父级**：首先获取“父级上下文”（当前实例已有的 `this.ctx`）。
+    2. **建立继承**：如果允许继承，执行 `Object.create(parentCtx)` 建立原型链继承。这确保了父级属性可见，且严禁直接使用 `Object.assign` 覆盖，否则会丢失原型链上的数据。
+    3. **能力注入 (AOP)**：这是插件最关键的切入点。例如 `Cancelable` 插件会在此处自动注入 `aborter` 实例。**注意**：内核调用必须走实例路径（`this._prepareContext`）才能触发插件钩子。
+    4. **属性覆盖**：最后将用户传入的 `ctx` 浅拷贝合并到顶层。
 
-  > **⚠️ 注意**：在重写这些方法时，务必调用 `super._shouldIsolate` 或 `super._prepareContext` 以保证框架核心功能的正常运行。
+  > **⚠️ 提示**：在重写这些方法时，务必调用 `super._shouldIsolate` 或 `super._prepareContext` 以保证框架核心功能和插件链的正常运行。
 
 #### 6. 上下文的自动传播 (Propagation)
 
@@ -232,7 +229,7 @@ await runner.run({ id: 789 });
 
 #### 1. 核心机制：透明的上下文集成
 
-通过 `makeToolFuncCancelable` 赋予工具“可取消”能力后，框架会自动参与执行上下文的构建：
+通过 `makeToolFuncCancelable` 动态赋予工具函数“可取消”能力后，框架会自动参与执行上下文的构建：
 
 - **自动注入**: 每次调用工具时，框架会在影子实例的 `this.ctx` 中自动注入一个 `TaskAbortController` (简称 `aborter`)。
 - **环境隔离**: 每个并发任务拥有独立的中止器，互不干扰。
