@@ -492,13 +492,17 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Asynchronously executes a registered function by name with named parameters.
+   *
+   * Note: This method returns a `Promise` if the underlying function is asynchronous,
+   * otherwise it may return the result synchronously.
+   *
    * @param {string} name - The name of the function to run.
    * @param {any} [params] - The parameters object for the function.
    * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {Promise<any>} A promise that resolves with the function's result.
+   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
    * @throws {NotFoundError} If the function with the given name is not found.
    */
-  static run(name: string, params?: any, ctx?: ToolFuncContext): Promise<any> {
+  static run(name: string, params?: any, ctx?: ToolFuncContext): Promise<any>|any {
     const func = this.get(name)
     if (func) {
       return func.run(params, ctx || this.ctx)
@@ -535,12 +539,16 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Asynchronously executes a function using positional arguments.
+   *
+   * Note: This method returns a `Promise` if the underlying function is asynchronous,
+   * otherwise it may return the result synchronously.
+   *
    * @param {string} name - The name of the function to run.
    * @param {...any[]} params - Positional arguments to pass to the function.
-   * @returns {Promise<any>} A promise that resolves with the function's result.
+   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
    * @throws {NotFoundError} If the function with the given name is not found.
    */
-  static runWithPos(name: string, ...params: any[]): Promise<any> {
+  static runWithPos(name: string, ...params: any[]): Promise<any>|any {
     const func = this.get(name)
     if (func) {
       const runner = this.ctx ? func.with(this.ctx) : func;
@@ -579,6 +587,14 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Registers a new tool function.
    *
+   * This method supports various ways to define a tool:
+   * - Providing a name and options.
+   * - Providing a named function (the name is automatically inferred if not in options).
+   * - Providing an options object containing the function and metadata.
+   *
+   * If dependencies are declared in `options.depends`, they will be automatically registered.
+   * Circular dependencies are handled safely.
+   *
    * @overload
    * @param {string} name - The name of the function.
    * @param {FuncItem} options - The function's configuration.
@@ -593,6 +609,7 @@ export class ToolFunc extends AdvancePropertyManager {
    * @param {string | ToolFunc | Function | FuncItem} name - A name, `ToolFunc` instance, function, or configuration object.
    * @param {FuncItem} [options] - Additional configuration.
    * @returns {boolean | ToolFunc} The new `ToolFunc` instance, or `false` if a function with that name already exists.
+   * @throws {Error} If no name can be inferred and none is provided.
    */
   static register(name: string, options: FuncItem): boolean|ToolFunc
   static register(func: Function, options: FuncItem): boolean|ToolFunc
@@ -604,6 +621,7 @@ export class ToolFunc extends AdvancePropertyManager {
         break
       case 'function':
         options.func = name as TFunc
+        if (!options.name) { options.name = (name as any).name }
         break
       case 'object':
         options = name
@@ -611,6 +629,15 @@ export class ToolFunc extends AdvancePropertyManager {
     }
 
     name = options.name as string
+    if (!name) {
+      if (typeof options.func === 'function' && options.func.name) {
+        name = options.name = options.func.name
+      }
+    }
+
+    if (!name) {
+      throwError('Function name is required for registration')
+    }
 
     let result: boolean|ToolFunc = !!this.get(name)
     if (!result) {
@@ -642,14 +669,19 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
-   * Unregisters a function by its name, also removing any associated aliases.
-   * @param {string} name - The name of the function to unregister.
+   * Unregisters a function by its name or alias.
+   *
+   * This method ensures that the primary function and all its associated aliases are
+   * removed from the static registry.
+   *
+   * @param {string} name - The name or alias of the function to unregister.
    * @returns {ToolFunc | undefined} The unregistered `ToolFunc` instance, or `undefined` if it was not found.
    */
   static unregister(name: string): ToolFunc|undefined {
     const result = this.get(name)
     if (result) {
       delete this.items[name]
+      delete this.items[result.name!]
       if (result.alias) {
         const aliases = result.alias
         if (typeof aliases === 'string') {
@@ -667,6 +699,9 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Initializes a new `ToolFunc` instance.
    *
+   * If a named function is provided as the first argument (or in `options.func`),
+   * and no name is explicitly provided, the instance will automatically inherit the function's name.
+   *
    * @param {string | Function | FuncItem} name - Can be a function name, a function implementation, or a configuration object.
    * @param {FuncItem | any} [options={}] - Configuration options if not provided in the first argument.
    */
@@ -679,12 +714,16 @@ export class ToolFunc extends AdvancePropertyManager {
         break
       case 'function':
         options.func = name
+        if (!options.name) { options.name = (name as any).name }
         break
       case 'object':
         options = name
         break
     }
     this.name = name = options.name as string
+    if (!name && typeof options.func === 'function') {
+      this.name = name = options.func.name
+    }
     /**
      * _origin always points to the Root ToolFunc instance (the one created via 'new').
      * RATIONALE:
@@ -718,15 +757,18 @@ export class ToolFunc extends AdvancePropertyManager {
    */
   register() {
     const Tools = (this.constructor as unknown as typeof ToolFunc)
-    const depends = this.depends
-    if (depends) {
-      const keys = Object.keys(depends)
-      for (const k of keys) {
-        const dep = depends[k]
-        if (dep instanceof ToolFunc) { dep.register() }
+    const result = Tools.register(this)
+    if (result) {
+      const depends = this.depends
+      if (depends) {
+        const keys = Object.keys(depends)
+        for (const k of keys) {
+          const dep = depends[k]
+          if (dep instanceof ToolFunc) { dep.register() }
+        }
       }
     }
-    return Tools.register(this)
+    return result
   }
 
   /**
@@ -844,23 +886,30 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Executes the function asynchronously with a named parameters object.
+   *
+   * Note: This method returns a `Promise` if the underlying function is asynchronous,
+   * otherwise it may return the result synchronously.
+   *
    * @param {any} [params] - The parameters object for the function.
    * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {Promise<any>} A promise that resolves with the function's result.
+   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
    */
-  run(params?: any, ctx?: ToolFuncContext): Promise<any> {
+  run(params?: any, ctx?: ToolFuncContext): Promise<any>|any {
     return this.runSync(params, ctx)
   }
 
   /**
    * Asynchronously executes another registered function by name.
-   * This method delegates to `runAsSync()` internally.
+   *
+   * Note: This method returns a `Promise` if the underlying function is asynchronous,
+   * otherwise it may return the result synchronously.
+   *
    * @param {string} name - The name of the target function to run.
    * @param {any} [params] - Optional parameters to pass to the function.
    * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {Promise<any>} A promise that resolves with the result of the function execution.
+   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
    */
-  runAs(name:string, params?: any, ctx?: ToolFuncContext): Promise<any> {
+  runAs(name:string, params?: any, ctx?: ToolFuncContext): Promise<any>|any {
     return this.runAsSync(name, params, ctx)
   }
 
@@ -930,22 +979,28 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Executes the function asynchronously using positional arguments.
-   * Delegates to `runWithPosSync()` internally.
+   *
+   * Note: This method returns a `Promise` if the underlying function is asynchronous,
+   * otherwise it may return the result synchronously.
+   *
    * @param {...any[]} params - Positional arguments passed to the function.
-   * @returns {Promise<any>} A promise that resolves with the result of the function execution.
+   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
    */
-  runWithPos(...params: any[]): Promise<any> {
+  runWithPos(...params: any[]): Promise<any>|any {
     return this.runWithPosSync(...params)
   }
 
   /**
    * Asynchronously executes another function by name using positional arguments.
-   * Delegates to `runWithPosAsSync()` internally.
+   *
+   * Note: This method returns a `Promise` if the underlying function is asynchronous,
+   * otherwise it may return the result synchronously.
+   *
    * @param {string} name - The name of the target function to run.
    * @param {...any[]} params - Positional arguments to pass to the function.
-   * @returns {Promise<any>} A promise that resolves with the result of the function execution.
+   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
    */
-  runWithPosAs(name:string, ...params: any[]): Promise<any> {
+  runWithPosAs(name:string, ...params: any[]): Promise<any>|any {
     return this.runWithPosAsSync(name, ...params)
   }
 
