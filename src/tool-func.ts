@@ -219,6 +219,19 @@ export interface FuncItem extends BaseFuncItem {
 }
 
 /**
+ * Options for registering a tool function.
+ */
+export interface RegisterOptions extends FuncItem {
+  /**
+   * Optional override behavior:
+   * - `true`: Allows overwriting an existing function with the same name.
+   * - `{ name: true }`: Same as `true`.
+   * - `{ alias: true }`: Allows stealing existing aliases from other functions.
+   */
+  allowOverride?: boolean | { name?: boolean, alias?: boolean };
+}
+
+/**
  * Represents a fully-defined tool function where the implementation is mandatory.
  * @interface
  */
@@ -261,6 +274,25 @@ export interface ToolFuncPackage {
 
 export declare interface ToolFunc extends BaseFunc {
   [name: string]: any;
+}
+
+/**
+ * Options for unregistering a tool function.
+ */
+export interface UnregisterOptions {
+  /**
+   * If true, force physical removal from the registry even if references exist.
+   * Also defaults the `decrement` option to `'all'` if not specified.
+   */
+  force?: boolean;
+  /**
+   * How to handle the reference count.
+   * - 'once' (default): Decrement the count by one.
+   * - 'all': Completely remove the reference count entry.
+   *
+   * @default force ? 'all' : 'once'
+   */
+  decrement?: 'once' | 'all';
 }
 
 /**
@@ -320,15 +352,25 @@ export declare interface ToolFunc extends BaseFunc {
  */
 export class ToolFunc extends AdvancePropertyManager {
   /**
-   * A static registry of all `ToolFunc` instances, indexed by name.
+   * A static registry of all `ToolFunc` implementations, indexed by their primary name.
    * @type {Funcs}
    */
   static items: Funcs = {};
+
   /**
-   * A static map of aliases to their corresponding function names.
+   * A static map of aliases to their corresponding primary function names.
    * @type {{ [name: string]: string }}
    */
   static aliases: {[name: string]: string} = {};
+
+  /**
+   * Tracks the number of active registration holds on each function name.
+   * A function is truly removed only when its reference count drops to zero.
+   * @type {{ [name: string]: number }}
+   * @protected
+   */
+  protected static _refCounts: {[name: string]: number} = {};
+
   /**
    * A conventional property to designate a file path for saving the registered `ToolFunc` data.
    * Note: The `ToolFunc` class itself does not implement persistence logic. It is up to the
@@ -585,115 +627,200 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
-   * Registers a new tool function.
+   * Registers a tool function implementation.
    *
-   * This method supports various ways to define a tool:
-   * - Providing a name and options.
-   * - Providing a named function (the name is automatically inferred if not in options).
-   * - Providing an options object containing the function and metadata.
-   *
-   * If dependencies are declared in `options.depends`, they will be automatically registered.
-   * Circular dependencies are handled safely.
-   *
-   * @overload
-   * @param {string} name - The name of the function.
-   * @param {FuncItem} options - The function's configuration.
-   * @returns {boolean | ToolFunc} The new `ToolFunc` instance, or `false` if a function with that name already exists.
-   *
-   * @overload
-   * @param {Function} func - The function implementation.
-   * @param {FuncItem} options - The function's configuration.
-   * @returns {boolean | ToolFunc} The new `ToolFunc` instance, or `false` if a function with that name already exists.
-   *
-   * @overload
-   * @param {string | ToolFunc | Function | FuncItem} name - A name, `ToolFunc` instance, function, or configuration object.
-   * @param {FuncItem} [options] - Additional configuration.
-   * @returns {boolean | ToolFunc} The new `ToolFunc` instance, or `false` if a function with that name already exists.
-   * @throws {Error} If no name can be inferred and none is provided.
+   * @param {string | ToolFunc | Function | RegisterOptions} name - The name, implementation, or config.
+   * @param {RegisterOptions} [options] - Additional configuration.
+   * @returns {boolean | ToolFunc} The registered implementation, or `false` if registration failed.
    */
-  static register(name: string, options: FuncItem): boolean|ToolFunc
-  static register(func: Function, options: FuncItem): boolean|ToolFunc
-  static register(name: string|ToolFunc|Function|FuncItem, options?: FuncItem): boolean|ToolFunc
-  static register(name: ToolFunc|string|Function|FuncItem, options: FuncItem|ToolFunc = {} as any) {
+  static register(name: string, options: RegisterOptions): boolean|ToolFunc
+  static register(func: Function, options: RegisterOptions): boolean|ToolFunc
+  static register(name: string|ToolFunc|Function|RegisterOptions, options?: RegisterOptions): boolean|ToolFunc
+  static register(name: ToolFunc|string|Function|RegisterOptions, options: RegisterOptions|ToolFunc = {} as any) {
+    // 1. Parameter Normalization
+    if (name && typeof name === 'object' && !(name instanceof ToolFunc) && !(name as any).func && (name as any).name) {
+      if (options && typeof options === 'object' && options !== name) {
+        name = { ...name, ...(options as any) }
+      }
+    }
+
     switch (typeof name) {
-      case 'string':
-        options.name = name
-        break
+      case 'string': options.name = name; break
       case 'function':
         options.func = name as TFunc
         if (!options.name) { options.name = (name as any).name }
         break
       case 'object':
-        options = name
+        if (options && options !== name) {
+          options = Object.assign(name, options)
+        } else {
+          options = name as any
+        }
         break
     }
 
-    name = options.name as string
-    if (!name) {
+    let realName = options.name as string
+    if (!realName) {
       if (typeof options.func === 'function' && options.func.name) {
-        name = options.name = options.func.name
+        realName = options.name = options.func.name
       }
     }
+    if (!realName) { throwError('Function name is required for registration') }
 
-    if (!name) {
-      throwError('Function name is required for registration')
-    }
+    const allowOverride = (options as any).allowOverride
+    if (allowOverride !== undefined) { delete (options as any).allowOverride }
+    const override = typeof allowOverride === 'object' ? allowOverride : { name: !!allowOverride }
 
-    let result: boolean|ToolFunc = !!this.get(name)
-    if (!result) {
-      if (!(options instanceof ToolFunc)) {
-        result = new this(options)
-        return result.register()
-      }
-      this.items[name] = options as ToolFunc
+    const existing = this.get(realName)
+    const normalizedName = existing ? existing.name! : realName
+    options.name = normalizedName
 
-      if (options.alias) {
-        const aliases = options.alias
-        if (typeof aliases === 'string') {
-          if (this.aliases[aliases]) {
-            throwError(`Alias ${aliases} already exists for ${name}`)
-          }
-          this.aliases[aliases] = name
-        } else if (Array.isArray(aliases)) {
-          for (const alias of aliases) {
-            if (this.aliases[alias]) {
-              throwError(`Alias ${alias} already exists for ${name}`)
-            }
-            this.aliases[alias] = name
-          }
+    // 2. Atomic Alias Check
+    const alias = (options as any).alias
+    if (alias) {
+      const aliases = Array.isArray(alias) ? alias : [alias]
+      for (const a of aliases) {
+        const owner = this.aliases[a]
+        if (owner && owner !== normalizedName && !override.alias) {
+          throwError(`Alias ${a} already exists for ${owner}`)
         }
       }
-      result = options as ToolFunc
-    } else {result = false}
+    }
+
+    let result: boolean|ToolFunc = !!existing
+
+    if (result && override.name) {
+      const refCount = this._refCounts[normalizedName] || 1
+      console.warn(`[ToolFunc] Overriding "${normalizedName}" which is held by ${refCount} references.`)
+      this.unregister(normalizedName, { force: true, decrement: 'once' })
+      result = false
+    }
+
+    if (!result) {
+      if (!(options instanceof ToolFunc)) {
+        options = new this(options)
+      }
+      const inst = options as ToolFunc
+      this.items[normalizedName] = inst
+      this._incRefCount(normalizedName)
+
+      try {
+        if (inst.alias) {
+          const aliases = Array.isArray(inst.alias) ? inst.alias : [inst.alias]
+          for (const a of aliases) {
+            this.aliases[a] = normalizedName
+          }
+        }
+        this._acquireDependencies(inst)
+        result = inst
+      } catch (e) {
+        this.unregister(normalizedName, { force: true })
+        throw e
+      }
+    } else {
+      this._incRefCount(normalizedName)
+      if (alias && existing instanceof ToolFunc) {
+        const aliases = Array.isArray(alias) ? alias : [alias]
+        for (const a of aliases) { this.aliases[a] = normalizedName }
+        const old = existing.alias
+        if (!old) { existing.alias = alias }
+        else {
+          const merged = new Set(Array.isArray(old) ? old : [old])
+          aliases.forEach(a => merged.add(a))
+          existing.alias = Array.from(merged)
+        }
+      }
+      result = false
+    }
     return result
   }
 
   /**
-   * Unregisters a function by its name or alias.
+   * Unregisters a function implementation.
    *
-   * This method ensures that the primary function and all its associated aliases are
-   * removed from the static registry.
-   *
-   * @param {string} name - The name or alias of the function to unregister.
-   * @returns {ToolFunc | undefined} The unregistered `ToolFunc` instance, or `undefined` if it was not found.
+   * @param {string | ToolFunc} target - The name, alias, or implementation.
+   * @param {UnregisterOptions | boolean} [options] - Options or force flag.
    */
-  static unregister(name: string): ToolFunc|undefined {
-    const result = this.get(name)
-    if (result) {
-      delete this.items[name]
-      delete this.items[result.name!]
-      if (result.alias) {
-        const aliases = result.alias
-        if (typeof aliases === 'string') {
-          delete this.aliases[aliases]
-        } else if (Array.isArray(aliases)) {
-          for (const alias of aliases) {
-            delete this.aliases[alias]
-          }
+  static unregister(target: string | ToolFunc, options?: UnregisterOptions | boolean): ToolFunc|undefined {
+    let force = false
+    let decrement: 'once' | 'all' = 'once'
+
+    if (typeof options === 'boolean') {
+      force = options; if (force) decrement = 'all'
+    } else if (options && typeof options === 'object') {
+      force = !!options.force
+      decrement = options.decrement || (force ? 'all' : 'once')
+    }
+
+    let inst: ToolFunc | undefined;
+    let realName: string | undefined;
+
+    if (typeof target === 'string') {
+      inst = this.items[target] || this.get(target);
+      realName = inst ? inst.name : (this.aliases[target] || target);
+    } else {
+      inst = target;
+      realName = inst.name;
+    }
+
+    if (!realName) return undefined;
+
+    const oldCount = this._refCounts[realName] || 0
+    let newCount = 0
+
+    if (decrement === 'all') {
+      delete this._refCounts[realName]
+    } else {
+      newCount = this._decRefCount(realName)
+    }
+
+    if (newCount === 0 || force) {
+      if (inst && this.items[realName] === inst) {
+        delete this.items[realName]
+        if (inst.alias) {
+          const list = Array.isArray(inst.alias) ? inst.alias : [inst.alias]
+          for (const a of list) { if (this.aliases[a] === realName) delete this.aliases[a] }
         }
       }
+      if (inst) {
+        this._releaseDependencies(inst)
+      }
     }
-    return result
+
+    return inst
+  }
+
+  protected static _incRefCount(name: string) {
+    this._refCounts[name] = (this._refCounts[name] || 0) + 1
+  }
+
+  protected static _decRefCount(name: string): number {
+    const current = this._refCounts[name] || 0
+    if (current <= 1) {
+      delete this._refCounts[name]
+      return 0
+    }
+    const count = current - 1
+    this._refCounts[name] = count
+    return count
+  }
+
+  protected static _acquireDependencies(inst: ToolFunc) {
+    const depends = inst.depends
+    if (depends) {
+      for (const dep of Object.values(depends)) {
+        if (dep instanceof ToolFunc) { this.register(dep) }
+      }
+    }
+  }
+
+  protected static _releaseDependencies(inst: ToolFunc) {
+    const depends = inst.depends
+    if (depends) {
+      for (const dep of Object.values(depends)) {
+        if (dep instanceof ToolFunc) { this.unregister(dep.name!) }
+      }
+    }
   }
 
   /**
@@ -757,26 +884,16 @@ export class ToolFunc extends AdvancePropertyManager {
    */
   register() {
     const Tools = (this.constructor as unknown as typeof ToolFunc)
-    const result = Tools.register(this)
-    if (result) {
-      const depends = this.depends
-      if (depends) {
-        const keys = Object.keys(depends)
-        for (const k of keys) {
-          const dep = depends[k]
-          if (dep instanceof ToolFunc) { dep.register() }
-        }
-      }
-    }
-    return result
+    return Tools.register(this)
   }
 
   /**
    * Removes the current `ToolFunc` instance from the static registry.
+   * @param {UnregisterOptions | boolean} [options] - Unregistration options or a boolean force flag.
    * @returns {ToolFunc | undefined} The instance that was unregistered.
    */
-  unregister() {
-    return (this.constructor as any).unregister(this.name)
+  unregister(options?: UnregisterOptions | boolean) {
+    return (this.constructor as any).unregister(this.name, options)
   }
 
   /**
