@@ -8,6 +8,8 @@ A powerful TypeScript framework for creating, managing, and executing modular to
 - **🌐 Global Registry:** A static registry (`ToolFunc.items`) allows any part of an application to access and run registered functions by name.
 - **🔗 Dependency Management:** Use the `depends` property to declare dependencies on other `ToolFunc`s, which are then auto-registered.
 - **🏷️ Aliasing & Tagging:** Assign multiple names (`alias`) or `tags` to a function for flexibility and grouping.
+- **🔢 Reference-Counted Registration:** Allows multiple modules to share the same tool, ensuring it's only truly removed when all references are released.
+- **⚖️ Controlled Overriding:** Explicitly support `allowOverride` mode to update tool implementations while keeping dependency chains intact.
 - **🚀 Lifecycle Hooks:** Use the `setup` method for one-time initialization logic.
 - **🔄 Asynchronous Capabilities:** Built-in support for cancellable tasks, timeouts, and concurrency control using `makeToolFuncCancelable`.
 - **🌊 Streamable Responses:** Easily create and handle streaming responses with the `stream` property and `createCallbacksTransformer`.
@@ -113,6 +115,44 @@ console.log(await ToolFunc.run('statefulTool'));
 // "State: configured, Initialized: ..."
 ```
 
+### Registration Lifecycle & Reference Counting
+
+In complex plugin systems, multiple tools might share the same underlying dependency. To safely manage these shared tools, `@isdk/tool-func` introduces a **Reference Counting** mechanism.
+
+#### 1. How Reference Counting Works
+
+- **`register()`**: Each time you call register, the reference count for that tool name is incremented. If the tool already exists and override mode is not enabled, it simply increments the count and returns `false` (indicating no new instance was created).
+- **`unregister()`**: Each time you call unregister, the reference count is decremented. The tool is only physically removed from the global registry when its count reaches zero.
+- **Forced Unregistration**: You can bypass the count and remove a tool immediately using `ToolFunc.unregister(name, true)` or `unregister({ force: true })`.
+
+#### 2. Automatic Dependency Lifecycle
+
+When you register a tool with `depends`, the framework automatically handles the lifecycle of its dependencies:
+- **Auto-Registration**: Registering a parent tool automatically registers all `ToolFunc` instance dependencies (incrementing their refCounts).
+- **Auto-Unregistration**: When a parent tool is completely removed (refCount reaches zero), it automatically triggers unregistration requests for all its dependencies (decrementing their refCounts).
+
+This ensures that as long as at least one parent tool is active, its required child tools will not be accidentally unloaded.
+
+#### 3. Implementation Overriding
+
+If you need to dynamically update the logic of an already registered tool (e.g., for hot-reloading or plugin replacement), use the `allowOverride` option:
+
+```typescript
+// Initial registration
+ToolFunc.register({ name: 'calc', func: () => 1 });
+
+// Attempt to override (without allowOverride, this only increments the refCount)
+ToolFunc.register({
+  name: 'calc',
+  func: () => 2,
+  allowOverride: true // Forcefully replace the existing implementation
+});
+
+console.log(ToolFunc.runSync('calc')); // Outputs: 2
+```
+
+> **⚠️ Note**: A warning is issued if the tool being overridden is still held by other references (refCount > 1). Overriding is atomic: if a new tool's alias conflicts with another existing tool, the override fails and the old version is preserved.
+
 ### Execution Context and Concurrency Isolation
 
 In production-grade applications, tool functions often don't run in isolation. They need to be aware of and respond to changes in the "execution environment". For example: carrying a `traceId` in distributed tracing, knowing the current `userId` in a web service, or responding to an `AbortSignal` in long-running tasks.
@@ -156,9 +196,9 @@ When you call `tool.with({ user: 'Alice' }).run()`:
 
 **Advantages of this design:**
 
+- **State Synchronization**: Ensures global validity of single-instance concurrency limits (`maxTaskConcurrency`) and other resource-tracking states via `_origin`. This prevents state drift by centralizing management on the original tool instance.
 - **Extremely Low Memory**: Shadow objects are just a very thin layer of properties and don't hold logic copies.
 - **Concurrency Safety**: Each shadow object is independent. 100 concurrent requests correspond to 100 shadow objects, without interference.
-- **State Synchronization**: Ensures global validity of single-instance concurrency limits (`maxTaskConcurrency`) via `_origin`.
 - **Dynamic Inheritance**: You can call `.with().with()` continuously, forming a chain of context inheritance.
 
 #### 4. Dual Forms of Fluent API
