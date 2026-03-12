@@ -128,6 +128,7 @@ console.log(await ToolFunc.run('statefulTool'));
 #### 2. 自动依赖生命周期
 
 当您注册一个带有 `depends` 的工具时，框架会自动处理依赖项的生命周期：
+
 - **自动注册**: 注册父工具时，所有 `ToolFunc` 实例类型的依赖项都会被自动注册（引用计数加 1）。
 - **自动注销**: 当父工具被彻底移除（引用计数归零）时，它会自动触发对所有依赖项的注销请求（引用计数减 1）。
 
@@ -511,6 +512,48 @@ console.log(await ToolFunc.runWithPos('addNumbers', 5, 3)); // 使用 runWithPos
 ```
 
 **建议：** 对于大多数用例，将 `params` 定义为对象并在 `func` 中按名称访问参数更清晰且不易出错，尤其当函数的参数列表变长时。
+
+### 灵活的参数归一化 (Flexible Argument Normalization)
+
+框架为 `ToolFunc` 构造函数和 `ToolFunc.register` 方法提供了一套“智能参数归一化”系统。该系统使用**模式识别**来识别您的意图，并应用**深度合并**（通过 `defaultsDeep`）来组合您的输入。
+
+#### 1. 核心原则：“主体”与“默认值”
+
+在所有涉及两个参数 `(arg1, arg2)` 的模式中，**`arg1` 是主要主体 (Authority)**，而 **`arg2` 提供深度默认值 (Defaults)**。这意味着如果两个参数定义了相同的属性（如 `title`），`arg1` 中的值将被保留。
+
+#### 2. 支持的模式
+
+系统自动识别以下模式：
+
+- **`(string, options)`**:
+  - 第一个参数是确定的 `name`。
+  - `options` 提供其他所有内容作为默认值。
+  - `const tool = new ToolFunc('myTool', { title: '默认标题' });`
+
+- **`(function, options)`**:
+  - 第一个参数是实现函数 `func`。
+  - 如果 `options` 中没有提供 `name`，则使用该函数的 `name` 作为兜底。
+  - **元数据感知**: 如果函数通过 `funcWithMeta` 进行了增强，其元数据将被自动提取并作为高优先级配置。
+  - `const tool = new ToolFunc(function myTask() {}, { description: '...' });`
+
+- **`(object, options)`**:
+  - 第一个参数是一个配置对象或现有的 `ToolFunc` 实例。
+  - 第二个参数递归地填充缺失的属性。
+  - `const tool = new ToolFunc({ name: 'task', title: '主标题' }, { title: '备用标题' }); // title 将是 '主标题'`
+
+#### 3. 深度合并的优势
+
+由于使用了 `defaultsDeep`，您可以为 `params`、`depends` 或 `result` 模式等嵌套结构提供局部默认值。
+
+```typescript
+ToolFunc.register(
+  { name: 'complex', params: { id: { type: 'string' } } },
+  { params: { apiKey: { type: 'string', required: true } } }
+);
+// 最终生成的工具将在其 params 中同时拥有 'id' 和 'apiKey'。
+```
+
+---
 
 ## 🏛️ 核心架构：静态与实例
 

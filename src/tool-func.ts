@@ -627,49 +627,100 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
-   * Registers a tool function implementation.
+   * Internal helper to normalize arguments from various input patterns.
+   * Priority: name (arg1) > options (arg2).
    *
-   * @param {string | ToolFunc | Function | RegisterOptions} name - The name, implementation, or config.
-   * @param {RegisterOptions} [options] - Additional configuration.
-   * @returns {boolean | ToolFunc} The registered implementation, or `false` if registration failed.
+   * @param {ToolFunc | string | Function | FuncItem} name - Primary config.
+   * @param {FuncItem | any} [options] - Default config.
+   * @returns {any} Normalized options object.
+   * @protected
+   * @internal
+   */
+  protected static _normalizeArguments(name: ToolFunc | string | Function | FuncItem, options?: FuncItem | any): any {
+    let result: any;
+
+    if (typeof name === 'string') {
+      result = { name };
+    } else if (typeof name === 'function') {
+      result = { func: name as TFunc };
+      const meta = (name as any)[FuncMetaSymbol];
+      if (meta && typeof meta === 'object') {
+        Object.assign(result, meta);
+      }
+    } else if (name instanceof ToolFunc) {
+      result = name;
+    } else if (name && typeof name === 'object') {
+      result = { ...name };
+    } else {
+      result = {};
+    }
+
+    if (options && typeof options === 'object' && options !== name && options !== result) {
+      defaultsDeep(result, options);
+    }
+
+    if (!result.name && typeof result.func === 'function' && (result.func as any).name) {
+      result.name = (result.func as any).name;
+    }
+
+    return result;
+  }
+
+  /**
+   * Normalizes the arguments passed to the `register` method into a unified `RegisterOptions` object.
+   *
+   * @param {ToolFunc | string | Function | RegisterOptions} name - The primary identification or implementation.
+   * @param {RegisterOptions} [options] - Additional or overriding configuration.
+   * @returns {RegisterOptions} A normalized options object ready for registration.
+   * @protected
+   * @internal
+   */
+  protected static _normalizeRegisterArguments(name: ToolFunc | string | Function | RegisterOptions, options?: RegisterOptions): RegisterOptions {
+    const result = this._normalizeArguments(name, options);
+    const allowOverride = result.allowOverride;
+    result.override = typeof allowOverride === 'object' ? allowOverride : { name: !!allowOverride };
+    if (result.hasOwnProperty('allowOverride')) { delete result.allowOverride; }
+    return result;
+  }
+
+  /**
+   * Registers a tool function implementation into the global registry.
+   *
+   * This method is highly flexible and supports multiple invocation patterns.
+   * If a function with the same name already exists, it increments the reference count
+   * unless `allowOverride` is specified.
+   *
+   * @param {string | ToolFunc | Function | RegisterOptions} name - The name, implementation, or configuration.
+   * @param {RegisterOptions} [options] - Additional configuration (e.g., `params`, `alias`, `allowOverride`).
+   * @returns {boolean | ToolFunc} Returns the registered `ToolFunc` instance on success (initial registration or override),
+   * or `false` if the function was already registered (reference count incremented).
+   *
+   * @example
+   * // 1. Using a config object and separate options
+   * ToolFunc.register({ name: 'my-tool', func: () => 'rpc' }, { allowOverride: true });
+   *
+   * // 2. Using name and implementation separately
+   * ToolFunc.register('my-tool', { func: () => 'hello' });
+   *
+   * // 3. Registering a named function directly
+   * ToolFunc.register(function myFunc() { return 'world'; });
+   *
+   * // 4. Registering an existing ToolFunc instance
+   * const tool = new ToolFunc({ name: 'my-tool', func: () => 'ok' });
+   * ToolFunc.register(tool);
+   *
+   * @throws {Error} If a function name cannot be determined or if an alias collision occurs without override permission.
    */
   static register(name: string, options: RegisterOptions): boolean|ToolFunc
   static register(func: Function, options: RegisterOptions): boolean|ToolFunc
   static register(name: string|ToolFunc|Function|RegisterOptions, options?: RegisterOptions): boolean|ToolFunc
   static register(name: ToolFunc|string|Function|RegisterOptions, options: RegisterOptions|ToolFunc = {} as any) {
-    // 1. Parameter Normalization
-    if (name && typeof name === 'object' && !(name instanceof ToolFunc) && !(name as any).func && (name as any).name) {
-      if (options && typeof options === 'object' && options !== name) {
-        name = { ...name, ...(options as any) }
-      }
-    }
-
-    switch (typeof name) {
-      case 'string': options.name = name; break
-      case 'function':
-        options.func = name as TFunc
-        if (!options.name) { options.name = (name as any).name }
-        break
-      case 'object':
-        if (options && options !== name) {
-          options = Object.assign(name, options)
-        } else {
-          options = name as any
-        }
-        break
-    }
+    options = this._normalizeRegisterArguments(name, options as RegisterOptions);
+    const override = (options as any).override;
+    if (options.hasOwnProperty('override')) { delete (options as any).override; }
 
     let realName = options.name as string
-    if (!realName) {
-      if (typeof options.func === 'function' && options.func.name) {
-        realName = options.name = options.func.name
-      }
-    }
     if (!realName) { throwError('Function name is required for registration') }
-
-    const allowOverride = (options as any).allowOverride
-    if (allowOverride !== undefined) { delete (options as any).allowOverride }
-    const override = typeof allowOverride === 'object' ? allowOverride : { name: !!allowOverride }
 
     const existing = this.get(realName)
     const normalizedName = existing ? existing.name! : realName
@@ -765,7 +816,6 @@ export class ToolFunc extends AdvancePropertyManager {
 
     if (!realName) return undefined;
 
-    const oldCount = this._refCounts[realName] || 0
     let newCount = 0
 
     if (decrement === 'all') {
@@ -835,22 +885,9 @@ export class ToolFunc extends AdvancePropertyManager {
   constructor(name: string|Function|FuncItem, options: FuncItem|any = {}) {
     super()
 
-    switch (typeof name) {
-      case 'string':
-        options.name = name
-        break
-      case 'function':
-        options.func = name
-        if (!options.name) { options.name = (name as any).name }
-        break
-      case 'object':
-        options = name
-        break
-    }
-    this.name = name = options.name as string
-    if (!name && typeof options.func === 'function') {
-      this.name = name = options.func.name
-    }
+    options = (this.constructor as typeof ToolFunc)._normalizeArguments(name, options);
+
+    this.name = options.name as string
     /**
      * _origin always points to the Root ToolFunc instance (the one created via 'new').
      * RATIONALE:

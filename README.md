@@ -128,6 +128,7 @@ In complex plugin systems, multiple tools might share the same underlying depend
 #### 2. Automatic Dependency Lifecycle
 
 When you register a tool with `depends`, the framework automatically handles the lifecycle of its dependencies:
+
 - **Auto-Registration**: Registering a parent tool automatically registers all `ToolFunc` instance dependencies (incrementing their refCounts).
 - **Auto-Unregistration**: When a parent tool is completely removed (refCount reaches zero), it automatically triggers unregistration requests for all its dependencies (decrementing their refCounts).
 
@@ -514,6 +515,48 @@ console.log(await ToolFunc.runWithPos('addNumbers', 5, 3)); // Use runWithPos fo
 ```
 
 **Recommendation:** For most use cases, defining `params` as an object and accessing arguments by name within your `func` is cleaner and less error-prone, especially as your function's parameter list grows.
+
+### Flexible Argument Normalization
+
+The framework features a "Smart Argument Normalization" system for both the `ToolFunc` constructor and the `ToolFunc.register` method. This system uses **Pattern Recognition** to identify your intent and applies **Deep Merging** (via `defaultsDeep`) to combine your inputs.
+
+#### 1. Core Principle: The "Authority" vs. "Defaults"
+
+In all patterns involving two arguments `(arg1, arg2)`, **`arg1` is the primary authority**, and **`arg2` provides deep default values**. This means if both arguments define the same property (like `title`), the value in `arg1` will be preserved.
+
+#### 2. Supported Patterns
+
+The system automatically recognizes the following patterns:
+
+- **`(string, options)`**:
+  - The first argument is the fixed `name`.
+  - `options` provides everything else as defaults.
+  - `const tool = new ToolFunc('myTool', { title: 'Default Title' });`
+
+- **`(function, options)`**:
+  - The first argument is the implementation `func`.
+  - Its `name` is used as a fallback if no `name` is provided in `options`.
+  - **Metadata Awareness**: If the function was enriched via `funcWithMeta`, its metadata is automatically extracted and used with high priority.
+  - `const tool = new ToolFunc(function myTask() {}, { description: '...' });`
+
+- **`(object, options)`**:
+  - The first argument is a configuration object or an existing `ToolFunc` instance.
+  - The second argument fills in missing properties recursively.
+  - `const tool = new ToolFunc({ name: 'task', title: 'Main' }, { title: 'Fallback' }); // title will be 'Main'`
+
+#### 3. Deep Merging Benefits
+
+Because it uses `defaultsDeep`, you can provide partial defaults for nested structures like `params`, `depends`, or `result` schemas.
+
+```typescript
+ToolFunc.register(
+  { name: 'complex', params: { id: { type: 'string' } } },
+  { params: { apiKey: { type: 'string', required: true } } }
+);
+// The resulting tool will have BOTH 'id' and 'apiKey' in its params.
+```
+
+---
 
 ## 🏛️ Core Architecture: Static vs. Instance
 
