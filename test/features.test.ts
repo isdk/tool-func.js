@@ -64,7 +64,7 @@ describe('ToolFunc Additional Features', () => {
           alias: 'commonAlias',
           func: () => 'two'
         });
-      }).toThrow(/Alias commonAlias already exists/);
+      }).toThrow(/Alias "commonAlias" already exists/);
     });
 
     it('should throw error when registering an array of aliases with duplicates', () => {
@@ -80,7 +80,7 @@ describe('ToolFunc Additional Features', () => {
             alias: ['alias3', 'alias1'],
             func: () => 'two'
           });
-        }).toThrow(/Alias alias1 already exists/);
+        }).toThrow(/Alias "alias1" already exists/);
       });
   });
 

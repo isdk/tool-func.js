@@ -154,6 +154,105 @@ console.log(ToolFunc.runSync('calc')); // Outputs: 2
 
 > **⚠️ Note**: A warning is issued if the tool being overridden is still held by other references (refCount > 1). Overriding is atomic: if a new tool's alias conflicts with another existing tool, the override fails and the old version is preserved.
 
+### Hierarchical Registries and Shadowing
+
+For complex systems with plugin architectures or multi-tenant environments, you might need to isolate certain tools while still inheriting others from a parent registry. `@isdk/tool-func` supports **Hierarchical Registries** using JavaScript's prototype chain.
+
+#### 1. Isolate Your Registry
+
+Use `ToolFunc.isolateRegistry()` to branch the current registry from its parent. This creates a new scope where registrations are local, but parent tools are still visible (and can be shadowed).
+
+```typescript
+class MyPluginTools extends ToolFunc {
+  static {
+    // Branch the registry: isolate items, aliases, and refCounts
+    this.isolateRegistry();
+  }
+}
+
+// Parent has 'global-tool'
+ToolFunc.register('global-tool', { func: () => 'global' });
+
+// MyPluginTools inherits 'global-tool' but can register its own 'local-tool'
+MyPluginTools.register('local-tool', { func: () => 'local' });
+
+console.log(MyPluginTools.get('global-tool')); // Returns the global tool
+console.log(MyPluginTools.get('local-tool'));  // Returns the local tool
+console.log(ToolFunc.get('local-tool'));       // undefined (isolated!)
+```
+
+#### 2. Tool Shadowing (Polymorphism)
+
+When a registry is isolated, you can register a tool with the same name as one in the parent. This "shadows" the parent tool within the current scope.
+
+```typescript
+// Shadowing the parent's 'calc' tool
+MyPluginTools.register('calc', { func: () => 'plugin-version' });
+
+console.log(ToolFunc.runSync('calc'));       // Original version
+console.log(MyPluginTools.runSync('calc'));  // Plugin version
+```
+
+#### 3. Namespace Protection
+
+If you want to ensure a name is globally unique and prevent accidental shadowing, use `allowOverride: false`. The registry will check the entire prototype chain and throw an error if the name is already taken.
+
+```typescript
+MyPluginTools.register('global-tool', { 
+  func: () => 'oops',
+  allowOverride: false // Throws error because 'global-tool' exists in parent
+});
+```
+
+#### 4. Scoped Unregistration
+
+The `unregister` method supports a `scope` option to control how deeply to remove a tool:
+
+- **`scope: 'local'` (default)**: Only remove the tool if it's "owned" by the current registry. If you unregister a shadow tool, the parent tool will "re-appear".
+- **`scope: 'inherited'`**: Search up the chain and remove the first occurrence.
+- **`scope: 'all'`**: Remove the tool from the current registry and all its parents.
+
+#### 5. Late-Binding Polymorphism & Binding Strategies
+
+In complex plugin systems, a parent tool may depend on other tools. When a child registry "shadows" these dependencies, the system intelligently senses the `rootRegistry` (entry-point caller) and switches implementations accordingly.
+
+```typescript
+class Parent extends ToolFunc {
+  static {
+    const depP = new ToolFunc({ name: 'dep', func: () => 'parent-dep' });
+    this.register(depP);
+    this.register({
+      name: 'main',
+      depends: { d: depP },
+      func: function() { return this.runAsSync('dep'); }
+    });
+  }
+}
+
+class Child extends Parent {
+  static {
+    this.isolateRegistry();
+    // Shadow the dependency
+    this.register({ name: 'dep', func: () => 'child-dep' });
+  }
+}
+
+// Auto mode: Child's shadow is used when called from Child
+console.log(Child.runSync('main'));  // Outputs: "child-dep"
+console.log(Parent.runSync('main')); // Outputs: "parent-dep" (Stability protection)
+```
+
+You can explicitly control the dependency binding behavior via `ctx.binding`:
+
+- **`'auto'` (Default)**: **Smart Sensing**. Switches to late-binding only if the caller is a descendant of the definer and has a shadow. This achieves polymorphism while preserving stability for same-scope calls.
+- **`'early'`**: **Early Binding (Safety First)**. Always uses the original instance bound at registration, ignoring any shadows.
+- **`'late'`**: **Late Binding (Environment First)**. Forced resolution from the rootRegistry, regardless of lineage.
+
+```typescript
+// Force using parent's original dependency even if child has a shadow
+Child.runSync('main', {}, { binding: 'early' }); // Outputs: "parent-dep"
+```
+
 ### Execution Context and Concurrency Isolation
 
 In production-grade applications, tool functions often don't run in isolation. They need to be aware of and respond to changes in the "execution environment". For example: carrying a `traceId` in distributed tracing, knowing the current `userId` in a web service, or responding to an `AbortSignal` in long-running tasks.

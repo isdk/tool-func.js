@@ -15,6 +15,20 @@ export type FuncParamType = string
  */
 export interface ToolFuncContext {
   /**
+   * The entry-point registry class that initiated the call chain.
+   * Used for late-binding dependency resolution in hierarchical registries.
+   */
+  rootRegistry?: typeof ToolFunc;
+
+  /**
+   * The binding strategy for internal dependencies (runAsSync).
+   * - 'early': Always use pre-bound instances from 'depends'.
+   * - 'late': Always resolve from rootRegistry (forced polymorphism).
+   * - 'auto': Use 'late' if rootRegistry shadows the dependency, else 'early' (Safe Default).
+   */
+  binding?: 'early' | 'late' | 'auto';
+
+  /**
    * Whether to enable independent execution scope.
    * If true, a temporary instance will be created via Object.create(this) to isolate concurrency.
    */
@@ -232,6 +246,18 @@ export interface RegisterOptions extends FuncItem {
 }
 
 /**
+ * Options for isolating a ToolFunc registry.
+ */
+export interface ToolFuncRegistryIsolateOptions {
+  /** Whether to isolate the main function registry (default: true). */
+  items?: boolean;
+  /** Whether to isolate the alias map (default: true). */
+  aliases?: boolean;
+  /** Whether to isolate the reference counts (default: true). */
+  refCounts?: boolean;
+}
+
+/**
  * Represents a fully-defined tool function where the implementation is mandatory.
  * @interface
  */
@@ -293,6 +319,40 @@ export interface UnregisterOptions {
    * @default force ? 'all' : 'once'
    */
   decrement?: 'once' | 'all';
+  /**
+   * The scope of unregistration in a hierarchical registry:
+   * - 'local' (default): Only remove if the item is "owned" by the current scope.
+   *   Ownership is defined by having an 'own' property in items, aliases, OR reference counts.
+   *   Note: Including reference counts ensures that circular dependencies are correctly cleaned up
+   *   even after the primary instance is removed from the items list during an override.
+   * - 'inherited': Search up the prototype chain and remove the first match found.
+   * - 'all': Remove all occurrences found in the entire prototype chain.
+   */
+  scope?: 'local' | 'inherited' | 'all';
+}
+
+/**
+ * Finds the first level in the prototype chain that "owns" the specified name
+ * as an own property in its items, aliases, or reference counts.
+ *
+ * @param {any} target - The starting object/class in the chain.
+ * @param {string} name - The name or alias to look for.
+ * @returns {any} The object/class that owns the name, or undefined.
+ * @internal
+ */
+function findRegistryOwner(target: any, name: string): any {
+  let current = target;
+  while (current && current.items) {
+    if (Object.prototype.hasOwnProperty.call(current.items, name) ||
+        Object.prototype.hasOwnProperty.call(current.aliases, name) ||
+        Object.prototype.hasOwnProperty.call(current._refCounts, name)) {
+      return current;
+    }
+    const next = Object.getPrototypeOf(current);
+    if (!next || next === current || next === Object.prototype) break;
+    current = next;
+  }
+  return undefined;
 }
 
 /**
@@ -370,6 +430,12 @@ export class ToolFunc extends AdvancePropertyManager {
    * @protected
    */
   protected static _refCounts: {[name: string]: number} = {};
+
+  /**
+   * The registry class where this tool was originally registered.
+   * @internal
+   */
+  _registry?: typeof ToolFunc;
 
   /**
    * A conventional property to designate a file path for saving the registered `ToolFunc` data.
@@ -481,6 +547,7 @@ export class ToolFunc extends AdvancePropertyManager {
     let result: ToolFunc|undefined;
     for (const name in this.list()) {
       const item = this.get(name)
+      if (!item) continue;
       let tags = item.tags
       if (typeof tags === 'string') {
         if (tags === tagName) {
@@ -506,6 +573,9 @@ export class ToolFunc extends AdvancePropertyManager {
     let result: ToolFunc[] = [];
     for (const name in this.list()) {
       const item = this.get(name)
+      if (!item) {
+        continue;
+      }
       let tags = item.tags
       if (typeof tags === 'string') {
         if (tags === tagName) {
@@ -547,7 +617,9 @@ export class ToolFunc extends AdvancePropertyManager {
   static run(name: string, params?: any, ctx?: ToolFuncContext): Promise<any>|any {
     const func = this.get(name)
     if (func) {
-      return func.run(params, ctx || this.ctx)
+      const context = this._prepareContext(this.ctx, ctx);
+      if (!context.rootRegistry) { context.rootRegistry = this }
+      return func.run(params, context)
     }
     throw new NotFoundError(`${name} to run`, this.name);
   }
@@ -563,7 +635,9 @@ export class ToolFunc extends AdvancePropertyManager {
   static runSync(name: string, params?: any, ctx?: ToolFuncContext) {
     const func = this.get(name)
     if (func) {
-      return func.runSync(params, ctx || this.ctx)
+      const context = this._prepareContext(this.ctx, ctx);
+      if (!context.rootRegistry) { context.rootRegistry = this }
+      return func.runSync(params, context)
     }
     throw new NotFoundError(`${name} to run`, this.name);
   }
@@ -667,6 +741,78 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
+   * Isolates the current registry layer by branching off its parent using prototype shadowing.
+   * 
+   * This creates a new "scope" where:
+   * 1. New registrations are stored only in the local layer, supporting tool shadowing.
+   * 2. Parent tools remain accessible via the prototype chain (read-only) unless shadowed.
+   * 3. Reference counting is isolated, enabling clean per-layer lifecycle management.
+   *
+   * @param {ToolFuncRegistryIsolateOptions} [options] - Options to selectively isolate specific maps (items, aliases, refCounts).
+   */
+  static isolateRegistry(options: ToolFuncRegistryIsolateOptions = { items: true, aliases: true, refCounts: true }) {
+    const Parent = Object.getPrototypeOf(this) as typeof ToolFunc;
+    if (!Parent || !Parent.items) return;
+
+    if (options.items !== false) {
+      this.items = Object.create(Parent.items);
+    }
+    if (options.aliases !== false) {
+      this.aliases = Object.create(Parent.aliases);
+    }
+    if (options.refCounts !== false) {
+      this._refCounts = Object.create(Parent._refCounts);
+    }
+  }
+
+  /**
+   * Resets the local registry by clearing all registered items, aliases, and reference counts.
+   *
+   * In a hierarchical registry, this only clears properties "owned" by the current 
+   * layer. Inherited items from parent registries remain visible through the prototype chain.
+   */
+  static clear() {
+    const protoItems = Object.getPrototypeOf(this.items || {});
+    const protoAliases = Object.getPrototypeOf(this.aliases || {});
+    const protoRefCounts = Object.getPrototypeOf(this._refCounts || {});
+
+    this.items = protoItems === Object.prototype ? {} : Object.create(protoItems);
+    this.aliases = protoAliases === Object.prototype ? {} : Object.create(protoAliases);
+    this._refCounts = protoRefCounts === Object.prototype ? {} : Object.create(protoRefCounts);
+  }
+
+  /**
+   * Analyzes the registration context and determines the appropriate action.
+   *
+   * @param {string} name - The function name to register.
+   * @param {any} override - Override options.
+   * @returns {'create' | 'shadow' | 'replace' | 'increment'} The determined registration action.
+   * @protected
+   */
+  protected static _getRegistrationAction(name: string, override: { name?: boolean }): 'create' | 'shadow' | 'replace' | 'increment' {
+    const owner = findRegistryOwner(this, name);
+    const isOwn = owner === this;
+    const isInherited = !!owner && !isOwn;
+
+    // 1. Cross-scope Namespace Protection
+    if (isInherited && override.name === false) {
+      throwError(`Name "${name}" is already defined in parent registry and shadowing is disabled.`);
+    }
+
+    // 2. Local Collision
+    if (isOwn) {
+      // Robustness: only increment if it actually exists in items.
+      // If it's a "ghost" (only in _refCounts), treat as 'create' to restore it.
+      if (Object.prototype.hasOwnProperty.call(this.items, name)) {
+        return override.name ? 'replace' : 'increment';
+      }
+    }
+
+    // 3. New Entry or Shadowing
+    return isInherited ? 'shadow' : 'create';
+  }
+
+  /**
    * Normalizes the arguments passed to the `register` method into a unified `RegisterOptions` object.
    *
    * @param {ToolFunc | string | Function | RegisterOptions} name - The primary identification or implementation.
@@ -678,43 +824,50 @@ export class ToolFunc extends AdvancePropertyManager {
   protected static _normalizeRegisterArguments(name: ToolFunc | string | Function | RegisterOptions, options?: RegisterOptions): RegisterOptions {
     const result = this._normalizeArguments(name, options);
     const allowOverride = result.allowOverride;
-    result.override = typeof allowOverride === 'object' ? allowOverride : { name: !!allowOverride };
+    result.override = typeof allowOverride === 'object' ? { ...allowOverride } : { name: allowOverride };
     if (result.hasOwnProperty('allowOverride')) { delete result.allowOverride; }
     return result;
   }
 
   /**
-   * Registers a tool function implementation into the global registry.
+   * Registers a `ToolFunc` instance into the registry.
    *
-   * This method is highly flexible and supports multiple invocation patterns.
-   * If a function with the same name already exists, it increments the reference count
-   * unless `allowOverride` is specified.
+   * This method supports multiple overloads and handles hierarchical registration, 
+   * alias collision protection, and automatic dependency registration with cycle detection.
    *
-   * @param {string | ToolFunc | Function | RegisterOptions} name - The name, implementation, or configuration.
-   * @param {RegisterOptions} [options] - Additional configuration (e.g., `params`, `alias`, `allowOverride`).
-   * @returns {boolean | ToolFunc} Returns the registered `ToolFunc` instance on success (initial registration or override),
-   * or `false` if the function was already registered (reference count incremented).
+   * ### Hierarchical Behavior:
+   * - In an isolated registry, items are stored locally, shadowing parent items with the same name.
+   * - Alias consistency is enforced across the hierarchy: registering a colliding alias throws an error 
+   *   unless `allowOverride.alias` is explicitly granted.
+   *
+   * ### Circular Dependencies:
+   * Automatically detects and manages circular dependency chains using an internal stack. 
+   * Reference counts are precisely managed (count=1 for back-edges) to prevent memory leaks 
+   * and enable clean group unregistration.
+   *
+   * @param {ToolFunc|string|Function|RegisterOptions} name - The tool instance, function, or name to register.
+   * @param {RegisterOptions|ToolFunc} options - Configuration or implementation for the tool.
+   * @param {Set<string>} [_stack] - @internal Used for cycle detection during recursive registration.
+   * @returns {ToolFunc | false} The registered ToolFunc instance on success (creation, shadowing, or override), 
+   * or `false` if registration was ignored (e.g., ref-count increment only).
    *
    * @example
-   * // 1. Using a config object and separate options
-   * ToolFunc.register({ name: 'my-tool', func: () => 'rpc' }, { allowOverride: true });
+   * // 1. Registering with explicit name and function
+   * ToolFunc.register('add', { func: (a, b) => a + b });
    *
-   * // 2. Using name and implementation separately
-   * ToolFunc.register('my-tool', { func: () => 'hello' });
+   * // 2. Registering with shadowing permission in an isolated registry
+   * MyPluginTools.register('calc', { func: () => 2 }, { allowOverride: true });
    *
-   * // 3. Registering a named function directly
-   * ToolFunc.register(function myFunc() { return 'world'; });
-   *
-   * // 4. Registering an existing ToolFunc instance
+   * // 3. Registering an existing ToolFunc instance
    * const tool = new ToolFunc({ name: 'my-tool', func: () => 'ok' });
    * ToolFunc.register(tool);
    *
-   * @throws {Error} If a function name cannot be determined or if an alias collision occurs without override permission.
+   * @throws {Error} If name is missing, or if an alias collision occurs without permission.
    */
   static register(name: string, options: RegisterOptions): boolean|ToolFunc
   static register(func: Function, options: RegisterOptions): boolean|ToolFunc
-  static register(name: string|ToolFunc|Function|RegisterOptions, options?: RegisterOptions): boolean|ToolFunc
-  static register(name: ToolFunc|string|Function|RegisterOptions, options: RegisterOptions|ToolFunc = {} as any) {
+  static register(name: string|ToolFunc|Function|RegisterOptions, options?: RegisterOptions, /** @internal */ _stack?: Set<string>): boolean|ToolFunc
+  static register(name: ToolFunc|string|Function|RegisterOptions, options: RegisterOptions|ToolFunc = {} as any, _stack?: Set<string>) {
     options = this._normalizeRegisterArguments(name, options as RegisterOptions);
     const override = (options as any).override;
     if (options.hasOwnProperty('override')) { delete (options as any).override; }
@@ -726,33 +879,45 @@ export class ToolFunc extends AdvancePropertyManager {
     const normalizedName = existing ? existing.name! : realName
     options.name = normalizedName
 
-    // 2. Atomic Alias Check
+    // Circular Dependency Detection via Stack (Ancestors only)
+    const stack = _stack || new Set<string>();
+    if (stack.has(normalizedName)) {
+      return false; // Back-edge: already processing this tool in current call stack
+    }
+
+    // 2. Atomic Alias Check (Ensures alias consistency across the hierarchy)
     const alias = (options as any).alias
     if (alias) {
       const aliases = Array.isArray(alias) ? alias : [alias]
       for (const a of aliases) {
-        const owner = this.aliases[a]
+        // Find owner of the alias in the entire hierarchy
+        const owner = this.aliases[a];
+
         if (owner && owner !== normalizedName && !override.alias) {
-          throwError(`Alias ${a} already exists for ${owner}`)
+          throwError(`Alias "${a}" already exists for "${owner}".`)
         }
       }
     }
 
-    let result: boolean|ToolFunc = !!existing
+    const action = this._getRegistrationAction(normalizedName, override);
+    let result: boolean|ToolFunc = (action === 'increment' || action === 'replace') && !!existing;
 
-    if (result && override.name) {
+    if (action === 'replace') {
       const refCount = this._refCounts[normalizedName] || 1
       console.warn(`[ToolFunc] Overriding "${normalizedName}" which is held by ${refCount} references.`)
-      this.unregister(normalizedName, { force: true, decrement: 'once' })
+      this.unregister(normalizedName, { force: true, decrement: 'once', scope: 'local' })
       result = false
     }
 
-    if (!result) {
+    if (action === 'create' || action === 'shadow' || action === 'replace') {
       if (!(options instanceof ToolFunc)) {
         options = new this(options)
       }
       const inst = options as ToolFunc
+      inst._registry = this;
       this.items[normalizedName] = inst
+
+      stack.add(normalizedName);
       this._incRefCount(normalizedName)
 
       try {
@@ -762,14 +927,17 @@ export class ToolFunc extends AdvancePropertyManager {
             this.aliases[a] = normalizedName
           }
         }
-        this._acquireDependencies(inst)
+        this._acquireDependencies(inst, stack)
         result = inst
       } catch (e) {
-        this.unregister(normalizedName, { force: true })
+        this.unregister(normalizedName, { force: true, scope: 'local' })
         throw e
+      } finally {
+        stack.delete(normalizedName);
       }
-    } else {
+    } else { // action === 'increment'
       this._incRefCount(normalizedName)
+
       if (alias && existing instanceof ToolFunc) {
         const aliases = Array.isArray(alias) ? alias : [alias]
         for (const a of aliases) { this.aliases[a] = normalizedName }
@@ -787,20 +955,32 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
-   * Unregisters a function implementation.
+   * Unregisters a tool function implementation from the registry by its name, alias, or instance.
    *
-   * @param {string | ToolFunc} target - The name, alias, or implementation.
-   * @param {UnregisterOptions | boolean} [options] - Options or force flag.
+   * This method supports hierarchical unregistration. If a function's reference count 
+   * reaches zero, it is physically removed from the registry and its dependencies are released.
+   *
+   * @param {string | ToolFunc} target - The name, alias, or implementation instance.
+   * @param {UnregisterOptions | boolean} [options] - Options or a simple 'force' boolean flag.
+   * @param {boolean} [options.force=false] - If true, removes the tool immediately.
+   * @param {'once'|'all'} [options.decrement='once'] - How many registration holds to release.
+   * @param {'local'|'inherited'|'all'} [options.scope='local'] - Hierarchical search scope:
+   *   - `'local'`: (Default) Only removes if owned by current registry layer.
+   *   - `'inherited'`: Searches up and removes the first matching tool found in parents.
+   *   - `'all'`: Removes from the current registry and ALL its parent registries.
+   * @returns {ToolFunc | undefined} The unregistered ToolFunc instance, or `undefined` if not found.
    */
   static unregister(target: string | ToolFunc, options?: UnregisterOptions | boolean): ToolFunc|undefined {
     let force = false
     let decrement: 'once' | 'all' = 'once'
+    let scope: 'local' | 'inherited' | 'all' = 'local'
 
     if (typeof options === 'boolean') {
       force = options; if (force) decrement = 'all'
     } else if (options && typeof options === 'object') {
       force = !!options.force
       decrement = options.decrement || (force ? 'all' : 'once')
+      scope = options.scope || 'local'
     }
 
     let inst: ToolFunc | undefined;
@@ -815,6 +995,44 @@ export class ToolFunc extends AdvancePropertyManager {
     }
 
     if (!realName) return undefined;
+
+    // Hierarchy Scope Handling
+    if (scope === 'inherited' || scope === 'all') {
+      let result: ToolFunc | undefined;
+      let current: any = this;
+      while (current) {
+        const owner = findRegistryOwner(current, realName);
+        if (!owner) break;
+
+        result = owner.unregister(target, { ...(options as any), scope: 'local' });
+        if (scope === 'inherited' && result) return result;
+
+        current = Object.getPrototypeOf(owner);
+        if (!current || current === Object.prototype) break;
+      }
+      return result;
+    }
+
+    /**
+     * SCOPE & OWNERSHIP CHECK:
+     * In a hierarchical registry, we must prevent a child scope from accidentally
+     * unregistering items belonging to its parent.
+     *
+     * Why check _refCounts for 'local' scope?
+     * During a 'force' unregistration or override of circular dependencies (e.g., A <-> B),
+     * an item (A) is physically removed from 'this.items' EARLY to prevent re-entrancy.
+     * However, its "ghost state" (the reference count) must remain accessible to the
+     * recursive cleanup process (_releaseDependencies) so that subsequent calls to
+     * unregister(A) from its dependencies can still identify 'A' as locally owned
+     * and finish decrementing its count to zero.
+     */
+    if (scope === 'local') {
+      if (!Object.prototype.hasOwnProperty.call(this.items, realName) &&
+          !Object.prototype.hasOwnProperty.call(this.aliases, realName) &&
+          !Object.prototype.hasOwnProperty.call(this._refCounts, realName)) {
+        return undefined;
+      }
+    }
 
     let newCount = 0
 
@@ -841,7 +1059,9 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   protected static _incRefCount(name: string) {
-    this._refCounts[name] = (this._refCounts[name] || 0) + 1
+    const isOwn = Object.prototype.hasOwnProperty.call(this._refCounts, name);
+    const current = isOwn ? this._refCounts[name] : 0;
+    this._refCounts[name] = current + 1;
   }
 
   protected static _decRefCount(name: string): number {
@@ -855,11 +1075,13 @@ export class ToolFunc extends AdvancePropertyManager {
     return count
   }
 
-  protected static _acquireDependencies(inst: ToolFunc) {
+  protected static _acquireDependencies(inst: ToolFunc, stack?: Set<string>) {
     const depends = inst.depends
     if (depends) {
       for (const dep of Object.values(depends)) {
-        if (dep instanceof ToolFunc) { this.register(dep) }
+        if (dep instanceof ToolFunc) {
+          this.register(dep, undefined, stack)
+        }
       }
     }
   }
@@ -1068,21 +1290,68 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
-   * Synchronously executes another registered function by name.
-   * This is a convenience method that forwards the call to the static `runSync()` method.
-   * @param {string} name - The name of the target function to run.
-   * @param {any} [params] - Optional parameters to pass to the function.
+   * Executes another registered function by name, using hierarchical dependency resolution.
+   *
+   * This method supports **Late-Binding Polymorphism**. It uses the `rootRegistry` and 
+   * `binding` strategy from the execution context to resolve dependencies.
+   *
+   * ### Binding Modes:
+   * - `'auto'` (Default): **Lineage-Aware**. Uses late-binding only if the `rootRegistry` 
+   *   is a descendant of the tool's definition registry and has shadowed the dependency. 
+   *   Otherwise, uses early-binding for stability.
+   * - `'early'`: **Safety First**. Always prefers the pre-bound instance from `depends`.
+   * - `'late'`: **Forced Polymorphism**. Always resolves from the `rootRegistry`, 
+   *   ignoring the definer's environment.
+   *
+   * @param {string} name - The name or alias of the target function to run.
+   * @param {any} [params] - Optional parameters to pass to the target function.
    * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {any} The result of the function execution.
+   * @returns {any} The result of the target function execution.
+   * @throws {NotFoundError} If the target function cannot be found in the current lineage.
    */
   runAsSync(name:string, params?: any, ctx?: ToolFuncContext) {
-    // IMPORTANT: Must use the instance method to ensure plugin hooks are triggered.
-    const context = this._prepareContext(params, ctx);
-    let func = this.depends?.[name] || (this.constructor as any).get(name)
+    // 1. Prepare context. Ensure it inherits control flags from current instance context.
+    let context = this._prepareContext(params, ctx);
+    const rootRegistry = context.rootRegistry || this.ctx?.rootRegistry || (this.constructor as typeof ToolFunc);
+    if (!context.rootRegistry) { context.rootRegistry = rootRegistry; }
+    if (!context.binding && this.ctx?.binding) { context.binding = this.ctx.binding; }
+
+    // 2. Determine Binding Strategy
+
+    const binding = context.binding || 'auto';
+    let func: ToolFunc | undefined;
+
+    if (binding === 'late') {
+      func = rootRegistry.get(name);
+    } else if (binding === 'early') {
+      func = this.depends?.[name] || rootRegistry.get(name);
+    } else { // 'auto' (Default)
+      // SMART ALGORITHM:
+      // Check if the dependency found in rootRegistry's hierarchy is a "newer shadow"
+      // than the one defined in our own definition scope.
+      const definitionRegistry = this._registry;
+      const owner = findRegistryOwner(rootRegistry, name);
+      
+      // If the owner of the tool in rootRegistry is a strict descendant of our 
+      // definition registry, it means the dependency has been shadowed in this chain.
+      const isShadowed = !!(definitionRegistry && owner && 
+                         (owner.prototype instanceof definitionRegistry));
+
+      // DEBUG LOGS (Remove after fix)
+      // console.log(`[TF DEBUG] RunAsSync '${name}' from ${this.name} (defined in ${definitionRegistry?.name}) called via ${rootRegistry.name}. Owner in root: ${owner?.name}. isShadowed: ${isShadowed}`);
+
+      if (isShadowed) {
+        // Safe to use polymorphism: we are in a customized sub-registry context.
+        func = rootRegistry.get(name);
+      } else {
+        // Stability first: use the pre-bound instance or fall back to global registry.
+        func = this.depends?.[name] || rootRegistry.get(name);
+      }
+    }
     if (func) {
       return func.runSync(params, context)
     }
-    throw new NotFoundError(`${name} to run`, (this.constructor as any).name);
+    throw new NotFoundError(`${name} to run`, rootRegistry.name);
   }
 
   /**
@@ -1256,6 +1525,7 @@ export const ToolFuncSchema = {
   },
   alias: {type: ['array', 'string']},
 }
+
 
 ToolFunc.defineProperties(ToolFunc, ToolFuncSchema)
 

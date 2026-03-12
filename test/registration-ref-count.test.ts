@@ -4,14 +4,7 @@ import { getRefCount } from './test-util'
 
 describe('ToolFunc Registration & Reference Counting', () => {
   beforeEach(() => {
-    // 清理注册表
-    for (const n of Object.keys(ToolFunc.items)) {
-      ToolFunc.unregister(n, { force: true })
-    }
-    // 重置引用计数
-    if ((ToolFunc as any)._refCounts) {
-      (ToolFunc as any)._refCounts = {}
-    }
+    ToolFunc.clear()
   })
 
   it('should increment refCount on registration', () => {
@@ -165,9 +158,7 @@ describe('ToolFunc Registration & Reference Counting', () => {
     b.depends = { a }
 
     a.register()
-    // a -> 1(direct) + 1(from b) = 2
-    // b -> 1(from a) = 1
-    expect(getRefCount('a')).toBe(2)
+    expect(getRefCount('a')).toBe(1)
     expect(getRefCount('b')).toBe(1)
 
     // Force unregister to break cycle
@@ -204,9 +195,7 @@ describe('ToolFunc Registration & Reference Counting', () => {
     b.depends = { a: aV1 }
 
     aV1.register()
-    // a: 1(direct) + 1(from b) = 2
-    // b: 1(from a) = 1
-    expect(getRefCount('a')).toBe(2)
+    expect(getRefCount('a')).toBe(1)
     expect(getRefCount('b')).toBe(1)
 
     // Override A with A->C
@@ -412,7 +401,7 @@ describe('ToolFunc Registration & Reference Counting', () => {
     })
 
     // Registration of 'parent' should fail because its dependency 'dep' has an alias collision
-    expect(() => parent.register()).toThrow('Alias collision already exists')
+    expect(() => parent.register()).toThrow('Alias "collision" already exists')
 
     expect(ToolFunc.get('parent')).toBeUndefined()
     expect(ToolFunc.get('dep')).toBeUndefined()
@@ -512,7 +501,7 @@ describe('ToolFunc Registration & Reference Counting', () => {
         func: () => 'v2',
         allowOverride: true
       })
-    }).toThrow('Alias collision already exists')
+    }).toThrow('Alias "collision" already exists')
 
     // Target should still be v1 because the registration failed before implementation replacement
     // Wait, in current logic, unregister(name, true) happens BEFORE alias check.
@@ -645,7 +634,7 @@ describe('ToolFunc Registration & Reference Counting', () => {
     })
 
     // Registration of 'parent' should fail because its dependency 'dep' has an alias collision
-    expect(() => parent.register()).toThrow('Alias collision already exists')
+    expect(() => parent.register()).toThrow('Alias "collision" already exists')
 
     expect(ToolFunc.get('parent')).toBeUndefined()
     expect(ToolFunc.get('dep')).toBeUndefined()

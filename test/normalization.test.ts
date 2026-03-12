@@ -65,7 +65,7 @@ describe('ToolFunc registration modularization', () => {
     // Should throw if alias is taken and no override
     expect(() => {
       ToolFunc.register({ name: 'tool2', func: () => 'two', alias: 'common' });
-    }).toThrow(/Alias common already exists/);
+    }).toThrow(/Alias "common" already exists/);
 
     // Should succeed with allowOverride: { alias: true }
     ToolFunc.register({ name: 'tool2', func: () => 'two', alias: 'common' }, { allowOverride: { alias: true } } as any);

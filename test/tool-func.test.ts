@@ -5,9 +5,7 @@ import { ToolFunc } from "../src/tool-func"
 
 describe('ToolFunc', () => {
   beforeEach(()=>{
-    for (const n of Object.keys(ToolFunc.items)) {
-      delete ToolFunc.items[n]
-    }
+    ToolFunc.clear();
   })
 
   it('should register a func with alias', async () => {

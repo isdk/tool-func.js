@@ -154,6 +154,105 @@ console.log(ToolFunc.runSync('calc')); // 输出: 2
 
 > **⚠️ 注意**: 如果被覆盖的工具正被其他引用持有（引用计数 > 1），框架会发出警告。覆盖操作是原子的：如果新工具的别名与现有其他工具冲突，覆盖将失败并保持旧版本。
 
+### 分层注册表与影子遮蔽 (Shadowing)
+
+对于具有插件架构或多租户环境的复杂系统，您可能需要隔离某些工具，同时仍从父注册表继承其他工具。`@isdk/tool-func` 支持使用 JavaScript 原型链的**分层注册表 (Hierarchical Registries)**。
+
+#### 1. 隔离您的注册表
+
+使用 `ToolFunc.isolateRegistry()` 从父级分支当前注册表。这会创建一个新的作用域，其中注册是局部的，但父级工具仍然可见（并且可以被遮蔽）。
+
+```typescript
+class MyPluginTools extends ToolFunc {
+  static {
+    // 隔离注册表：隔离项目、别名和引用计数
+    this.isolateRegistry();
+  }
+}
+
+// 父级拥有 'global-tool'
+ToolFunc.register('global-tool', { func: () => 'global' });
+
+// MyPluginTools 继承 'global-tool' 但可以注册自己的 'local-tool'
+MyPluginTools.register('local-tool', { func: () => 'local' });
+
+console.log(MyPluginTools.get('global-tool')); // 返回全局工具
+console.log(MyPluginTools.get('local-tool'));  // 返回局部工具
+console.log(ToolFunc.get('local-tool'));       // undefined (已隔离！)
+```
+
+#### 2. 工具影子遮蔽 (多态性)
+
+当注册表被隔离时，您可以注册一个与父级同名的工具。这会在当前作用域内“遮蔽 (Shadowing)”父级工具。
+
+```typescript
+// 遮蔽父级的 'calc' 工具
+MyPluginTools.register('calc', { func: () => 'plugin-version' });
+
+console.log(ToolFunc.runSync('calc'));       // 原始版本
+console.log(MyPluginTools.runSync('calc'));  // 插件版本
+```
+
+#### 3. 命名空间保护
+
+如果您想确保名称全局唯一并防止意外遮蔽，请使用 `allowOverride: false`。注册表将检查整个原型链，如果名称已被占用则抛出错误。
+
+```typescript
+MyPluginTools.register('global-tool', { 
+  func: () => 'oops',
+  allowOverride: false // 报错，因为 'global-tool' 存在于父级中
+});
+```
+
+#### 4. 作用域注销 (Scoped Unregistration)
+
+`unregister` 方法支持 `scope` 选项，以控制移除工具的深度：
+
+- **`scope: 'local'` (默认)**: 仅当工具被当前注册表“拥有”时才将其移除。如果您注销一个影子工具，父级工具将重新出现。
+- **`scope: 'inherited'`**: 沿原型链向上查找并移除第一个匹配项。
+- **`scope: 'all'`**: 从当前注册表及其所有父级中移除该工具。
+
+#### 5. 智能晚绑定与绑定策略 (Late-Binding Polymorphism)
+
+在复杂的插件系统中，父类工具可能依赖于其他工具。当子类“影子覆盖”了这些依赖项时，系统能够通过 `rootRegistry` (根调用者) 智能感知并切换。
+
+```typescript
+class Parent extends ToolFunc {
+  static {
+    const depP = new ToolFunc({ name: 'dep', func: () => 'parent-dep' });
+    this.register(depP);
+    this.register({
+      name: 'main',
+      depends: { d: depP },
+      func: function() { return this.runAsSync('dep'); }
+    });
+  }
+}
+
+class Child extends Parent {
+  static {
+    this.isolateRegistry();
+    // 影子覆盖依赖项
+    this.register({ name: 'dep', func: () => 'child-dep' });
+  }
+}
+
+// 自动模式：子类调用继承工具时，自动使用子类的影子版本
+console.log(Child.runSync('main'));  // 输出: "child-dep"
+console.log(Parent.runSync('main')); // 输出: "parent-dep" (同级稳定性保护)
+```
+
+您可以通过执行上下文 `ctx.binding` 显式控制依赖绑定的粒度：
+
+- **`'auto'` (默认)**: **智能感知**。仅当“根调用者”是“定义者”的后代且定义了同名影子时，才切换到晚绑定。这既实现了插件的多态性，又保护了同级调用时的依赖稳定性。
+- **`'early'`**: **早绑定 (安全性优先)**。始终使用注册时锁定的原始依赖实例，不受任何影子干扰。
+- **`'late'`**: **晚绑定 (环境优先)**。无视血缘关系，强制从当前根调用者的注册表重新解析依赖。
+
+```typescript
+// 强制使用父类的原始依赖，即便子类有影子
+Child.runSync('main', {}, { binding: 'early' }); // 输出: "parent-dep"
+```
+
 ### 执行上下文 (Context) 与 并发隔离
 
 在生产级应用中，工具函数通常不是孤立运行的。它们需要感知并响应“执行环境”的变化。例如：在分布式追踪中需要携带 `traceId`，在 Web 服务中需要感知当前 `userId`，或者在长时间任务中需要响应 `AbortSignal` 中止信号。
