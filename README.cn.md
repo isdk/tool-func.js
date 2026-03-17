@@ -198,7 +198,7 @@ console.log(MyPluginTools.runSync('calc'));  // 插件版本
 如果您想确保名称全局唯一并防止意外遮蔽，请使用 `allowOverride: false`。注册表将检查整个原型链，如果名称已被占用则抛出错误。
 
 ```typescript
-MyPluginTools.register('global-tool', { 
+MyPluginTools.register('global-tool', {
   func: () => 'oops',
   allowOverride: false // 报错，因为 'global-tool' 存在于父级中
 });
@@ -498,31 +498,43 @@ main();
 
 ### 使用 `createCallbacksTransformer` 处理流事件
 
-虽然 `ToolFunc` 允许您*返回*流，但您通常还需要处理流*内部*的数据。`createCallbacksTransformer` 实用工具可以创建一个 `TransformStream`，让您能够轻松地挂接到流的生命周期事件中。这对于在数据流经时进行日志记录、数据处理或触发副作用非常有用。
+虽然 `ToolFunc` 允许您*返回*流，但您通常还需要处理流*内部*的数据，或者确保健壮的资源清理。`createCallbacksTransformer` 实用工具可以创建一个 `TransformStream`，让您能够轻松地挂接到流的生命周期事件中。
 
-它接受一个包含以下可选回调函数的对象：
+#### 核心特性
 
-- `onStart`: 在流初始化时调用一次。
-- `onTransform`: 对于流经的每个数据块调用。
-- `onFinal`: 在流成功关闭时调用一次。
-- `onError`: 在流处理过程中发生错误时调用。
+- **统一清理钩子**：`onClose` 钩子保证只执行一次，无论流是以何种方式结束（成功、错误或取消）。这是释放 `ActiveTaskHandle` 等资源的理想位置。
+- **零拷贝优化**：如果您省略了 `onTransform`，转换器将表现为高性能的“恒等转换 (Identity Transform)”，让数据以极低的开销通过。
+- **RPC 与取消友好**：显式支持 `onCancel` 钩子，用于检测客户端断开连接或主动中止。
 
-以下是如何使用它来观察流：
+#### 回调函数
+
+- `onStart(controller)`: 在流初始化时调用一次。
+- `onTransform(chunk, controller)`: 为每个数据块调用（省略此项以启用零拷贝路径）。
+- `onFinal(controller)`: 在流成功关闭（上游 `close`）时调用一次。
+- `onCancel(reason)`: 在读取端取消流时调用。
+- `onError(err)`: 在发生错误时调用。
+- `onClose(status, reason)`: **推荐的清理钩子**。`status` 为 `'final'`, `'error'` 或 `'cancel'`。
+
+#### 示例：处理流并进行健壮的清理
 
 ```typescript
 import { createCallbacksTransformer } from '@isdk/tool-func';
 
 async function main() {
-  // 1. 使用回调创建一个转换器
+  // 1. 创建带有全面回调的转换器
   const transformer = createCallbacksTransformer({
     onStart: () => console.log('流已开始！'),
     onTransform: (chunk) => {
       console.log('收到数据块:', chunk);
-      // 如果需要，您可以在此处修改数据块
       return chunk.toUpperCase();
     },
-    onFinal: () => console.log('流已结束！'),
+    onFinal: () => console.log('流已正常结束！'),
     onError: (err) => console.error('流错误:', err),
+    onClose: (status, reason) => {
+      console.log(`资源清理：流已关闭，状态为 [${status}]`);
+      if (reason) console.log('原因/错误详情:', reason);
+      // myTaskHandle.release(); // 在此处释放您的资源句柄
+    }
   });
 
   // 2. 创建一个源 ReadableStream
@@ -530,7 +542,6 @@ async function main() {
     start(controller) {
       controller.enqueue('a');
       controller.enqueue('b');
-      controller.enqueue('c');
       controller.close();
     },
   });
@@ -558,9 +569,8 @@ main();
 处理后的数据块: A
 收到数据块: b
 处理后的数据块: B
-收到数据块: c
-处理后的数据块: C
-流已结束！
+流已正常结束！
+资源清理：流已关闭，状态为 [final]
 ```
 
 ### 参数处理：对象参数与位置参数

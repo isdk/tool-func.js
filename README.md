@@ -198,7 +198,7 @@ console.log(MyPluginTools.runSync('calc'));  // Plugin version
 If you want to ensure a name is globally unique and prevent accidental shadowing, use `allowOverride: false`. The registry will check the entire prototype chain and throw an error if the name is already taken.
 
 ```typescript
-MyPluginTools.register('global-tool', { 
+MyPluginTools.register('global-tool', {
   func: () => 'oops',
   allowOverride: false // Throws error because 'global-tool' exists in parent
 });
@@ -501,31 +501,43 @@ main();
 
 ### Handling Stream Events with `createCallbacksTransformer`
 
-While `ToolFunc` allows you to *return* streams, you often need to process the data *within* a stream. The `createCallbacksTransformer` utility creates a `TransformStream` that makes it easy to hook into a stream's lifecycle events. This is useful for logging, data processing, or triggering side effects as data flows through the stream.
+While `ToolFunc` allows you to *return* streams, you often need to process the data *within* a stream or ensure robust resource cleanup. The `createCallbacksTransformer` utility creates a `TransformStream` that makes it easy to hook into a stream's lifecycle events.
 
-It accepts an object with the following optional callback functions:
+#### Key Features
 
-- `onStart`: Called once when the stream is initialized.
-- `onTransform`: Called for each chunk of data that passes through the stream.
-- `onFinal`: Called once the stream is successfully closed.
-- `onError`: Called if an error occurs during the stream's processing.
+- **Unified Cleanup**: The `onClose` hook is guaranteed to run exactly once, regardless of how the stream ended (success, error, or cancel). This is the ideal place to release resources like `ActiveTaskHandle`.
+- **Zero-Copy Optimization**: If you omit `onTransform`, the transformer acts as a high-performance "Identity Transform", letting data pass through with minimal overhead.
+- **RPC & Cancellation Friendly**: Explicitly supports the `onCancel` hook to detect client disconnections or aborts.
 
-Here's how you can use it to observe a stream:
+#### Callback Functions
+
+- `onStart(controller)`: Called once when the stream is initialized.
+- `onTransform(chunk, controller)`: Called for each chunk. (Omit for zero-copy path).
+- `onFinal(controller)`: Called once the stream is successfully closed (upstream `close`).
+- `onCancel(reason)`: Called if the reader cancels the stream.
+- `onError(err)`: Called if an error occurs.
+- `onClose(status, reason)`: **The recommended cleanup hook**. `status` is `'final'`, `'error'`, or `'cancel'`.
+
+#### Example: Processing and Robust Cleanup
 
 ```typescript
 import { createCallbacksTransformer } from '@isdk/tool-func';
 
 async function main() {
-  // 1. Create a transformer with callbacks
+  // 1. Create a transformer with comprehensive callbacks
   const transformer = createCallbacksTransformer({
     onStart: () => console.log('Stream started!'),
     onTransform: (chunk) => {
       console.log('Received chunk:', chunk);
-      // You can modify the chunk here if needed
       return chunk.toUpperCase();
     },
-    onFinal: () => console.log('Stream finished!'),
+    onFinal: () => console.log('Stream finished normally!'),
     onError: (err) => console.error('Stream error:', err),
+    onClose: (status, reason) => {
+      console.log(`Resource Cleanup: Stream closed with status [${status}]`);
+      if (reason) console.log('Reason/Error:', reason);
+      // myTaskHandle.release();
+    }
   });
 
   // 2. Create a source ReadableStream
@@ -533,7 +545,6 @@ async function main() {
     start(controller) {
       controller.enqueue('a');
       controller.enqueue('b');
-      controller.enqueue('c');
       controller.close();
     },
   });
@@ -561,9 +572,8 @@ Received chunk: a
 Processed chunk: A
 Received chunk: b
 Processed chunk: B
-Received chunk: c
-Processed chunk: C
-Stream finished!
+Stream finished normally!
+Resource Cleanup: Stream closed with status [final]
 ```
 
 ### Parameter Handling: Object vs. Positional
