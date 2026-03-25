@@ -1,0 +1,2 @@
+issues:
+  ☐ 现在依赖是被添加到当前ToolFunc类上的，这可能会造成：如果希望items只是继承类的，就会出现其他类的项。比如我的LLM 类，只希望放LLM的项目，结果因为设置依赖event,导致event出现在items中。
