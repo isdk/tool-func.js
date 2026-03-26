@@ -1,2 +1,7 @@
+refactor:
+  ☐ 将Abort功能从 cancelable-ability.ts 中拆分出来，变为两个AoP能力:
+    ☐ AbortableAbility 对异步函数进行abort.
+    ☐ CancelableAbility 看如何继承AbortableAbility扩展为对多个并发异步任务进行管理
+  ☐ 思考是否需要在 ctx 上注入 task: 扩展 Promise 任务句柄，让外面也能访问？
 issues:
-  ☐ 现在依赖是被添加到当前ToolFunc类上的，这可能会造成：如果希望items只是继承类的，就会出现其他类的项。比如我的LLM 类，只希望放LLM的项目，结果因为设置依赖event,导致event出现在items中。
+  ☐ 现在依赖(`deps`)是被添加到当前ToolFunc类上的，这可能会造成：如果希望items只是继承类的，就会出现其他类的项。比如我的LLM 类，只希望放LLM的项目，结果因为设置依赖event,导致event出现在items中。
