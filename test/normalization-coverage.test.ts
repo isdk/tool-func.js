@@ -1,5 +1,5 @@
 
-import { ToolFunc, funcWithMeta } from '../src/tool-func';
+import { ToolFunc, funcWithMeta } from '../src/';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 describe('ToolFunc Normalization Coverage', () => {

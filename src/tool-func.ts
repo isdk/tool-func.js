@@ -1,4 +1,4 @@
-import { assign, defaultsDeep } from 'lodash-es';
+import { defaultsDeep } from 'lodash-es';
 import { AdvancePropertyManager } from 'property-manager';
 import { _createFunction } from 'util-ex';
 import { NotFoundError, throwError } from '@isdk/common-error';
@@ -742,7 +742,7 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Isolates the current registry layer by branching off its parent using prototype shadowing.
-   * 
+   *
    * This creates a new "scope" where:
    * 1. New registrations are stored only in the local layer, supporting tool shadowing.
    * 2. Parent tools remain accessible via the prototype chain (read-only) unless shadowed.
@@ -768,7 +768,7 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Resets the local registry by clearing all registered items, aliases, and reference counts.
    *
-   * In a hierarchical registry, this only clears properties "owned" by the current 
+   * In a hierarchical registry, this only clears properties "owned" by the current
    * layer. Inherited items from parent registries remain visible through the prototype chain.
    */
   static clear() {
@@ -832,23 +832,23 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Registers a `ToolFunc` instance into the registry.
    *
-   * This method supports multiple overloads and handles hierarchical registration, 
+   * This method supports multiple overloads and handles hierarchical registration,
    * alias collision protection, and automatic dependency registration with cycle detection.
    *
    * ### Hierarchical Behavior:
    * - In an isolated registry, items are stored locally, shadowing parent items with the same name.
-   * - Alias consistency is enforced across the hierarchy: registering a colliding alias throws an error 
+   * - Alias consistency is enforced across the hierarchy: registering a colliding alias throws an error
    *   unless `allowOverride.alias` is explicitly granted.
    *
    * ### Circular Dependencies:
-   * Automatically detects and manages circular dependency chains using an internal stack. 
-   * Reference counts are precisely managed (count=1 for back-edges) to prevent memory leaks 
+   * Automatically detects and manages circular dependency chains using an internal stack.
+   * Reference counts are precisely managed (count=1 for back-edges) to prevent memory leaks
    * and enable clean group unregistration.
    *
    * @param {ToolFunc|string|Function|RegisterOptions} name - The tool instance, function, or name to register.
    * @param {RegisterOptions|ToolFunc} options - Configuration or implementation for the tool.
    * @param {Set<string>} [_stack] - @internal Used for cycle detection during recursive registration.
-   * @returns {ToolFunc | false} The registered ToolFunc instance on success (creation, shadowing, or override), 
+   * @returns {ToolFunc | false} The registered ToolFunc instance on success (creation, shadowing, or override),
    * or `false` if registration was ignored (e.g., ref-count increment only).
    *
    * @example
@@ -957,7 +957,7 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Unregisters a tool function implementation from the registry by its name, alias, or instance.
    *
-   * This method supports hierarchical unregistration. If a function's reference count 
+   * This method supports hierarchical unregistration. If a function's reference count
    * reaches zero, it is physically removed from the registry and its dependencies are released.
    *
    * @param {string | ToolFunc} target - The name, alias, or implementation instance.
@@ -1292,15 +1292,15 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Executes another registered function by name, using hierarchical dependency resolution.
    *
-   * This method supports **Late-Binding Polymorphism**. It uses the `rootRegistry` and 
+   * This method supports **Late-Binding Polymorphism**. It uses the `rootRegistry` and
    * `binding` strategy from the execution context to resolve dependencies.
    *
    * ### Binding Modes:
-   * - `'auto'` (Default): **Lineage-Aware**. Uses late-binding only if the `rootRegistry` 
-   *   is a descendant of the tool's definition registry and has shadowed the dependency. 
+   * - `'auto'` (Default): **Lineage-Aware**. Uses late-binding only if the `rootRegistry`
+   *   is a descendant of the tool's definition registry and has shadowed the dependency.
    *   Otherwise, uses early-binding for stability.
    * - `'early'`: **Safety First**. Always prefers the pre-bound instance from `depends`.
-   * - `'late'`: **Forced Polymorphism**. Always resolves from the `rootRegistry`, 
+   * - `'late'`: **Forced Polymorphism**. Always resolves from the `rootRegistry`,
    *   ignoring the definer's environment.
    *
    * @param {string} name - The name or alias of the target function to run.
@@ -1331,10 +1331,10 @@ export class ToolFunc extends AdvancePropertyManager {
       // than the one defined in our own definition scope.
       const definitionRegistry = this._registry;
       const owner = findRegistryOwner(rootRegistry, name);
-      
-      // If the owner of the tool in rootRegistry is a strict descendant of our 
+
+      // If the owner of the tool in rootRegistry is a strict descendant of our
       // definition registry, it means the dependency has been shadowed in this chain.
-      const isShadowed = !!(definitionRegistry && owner && 
+      const isShadowed = !!(definitionRegistry && owner &&
                          (owner.prototype instanceof definitionRegistry));
 
       // DEBUG LOGS (Remove after fix)
@@ -1534,38 +1534,3 @@ ToolFunc.defineProperties(ToolFunc, ToolFuncSchema)
  * @internal
  */
 export const FuncMetaSymbol = Symbol('meta')
-/**
- * Attaches metadata to a function or `ToolFunc` object.
- *
- * This utility merges the provided metadata with any existing metadata on the target.
- *
- * @param {Function | ToolFunc} fn - The function or `ToolFunc` instance to which metadata will be added.
- * @param {any} meta - The metadata object to attach. The operation is skipped if this is not a non-null object.
- * @param {boolean} [ignoreExists=true] - If `true`, new metadata overwrites existing keys. If `false`, it merges deeply, preserving existing values.
- * @returns {Function | ToolFunc | undefined} The updated function or `ToolFunc` with metadata, or `undefined` if the operation was skipped.
- */
-export function funcWithMeta(fn: Function | ToolFunc, meta: any, ignoreExists: boolean = true) {
-  if (meta && typeof meta === 'object') {
-    if (typeof fn === 'function') {
-      meta = ignoreExists ? assign({}, fn[FuncMetaSymbol], meta) : defaultsDeep({}, fn[FuncMetaSymbol], meta)
-      fn[FuncMetaSymbol] = meta
-      return fn
-    } else if (fn instanceof ToolFunc) {
-      return fn.assign(meta)
-    }
-  }
-}
-
-/**
- * Retrieves metadata associated with a function or `ToolFunc` instance.
- *
- * @param {Function | ToolFunc} fn - The function or `ToolFunc` instance from which to retrieve metadata.
- * @returns {any} The metadata as a plain object, or `undefined` if no metadata is found.
- */
-export function funcGetMeta(fn: Function | ToolFunc) {
-  if (typeof fn === 'function') {
-    return fn[FuncMetaSymbol]
-  } else if (fn instanceof ToolFunc) {
-    return fn.toObject()
-  }
-}

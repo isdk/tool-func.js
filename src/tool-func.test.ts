@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { funcGetMeta, funcWithMeta, FuncMetaSymbol, ToolFunc } from './tool-func';
+import { funcGetMeta, funcWithMeta, FuncMetaSymbol, ToolFunc } from './';
 
 describe('funcWithMeta', () => {
   it('should return the function with merged metadata when meta is an object', () => {
