@@ -4,15 +4,19 @@ A powerful TypeScript framework for creating, managing, and executing modular to
 
 ## ✨ Core Features
 
-- **📦 Modular & Reusable Tools:** Define functions as `ToolFunc` instances with rich metadata.
-- **🌐 Global Registry:** A static registry (`ToolFunc.items`) allows any part of an application to access and run registered functions by name.
-- **🔗 Dependency Management:** Use the `depends` property to declare dependencies on other `ToolFunc`s, which are then auto-registered.
-- **🏷️ Aliasing & Tagging:** Assign multiple names (`alias`) or `tags` to a function for flexibility and grouping.
-- **🔢 Reference-Counted Registration:** Allows multiple modules to share the same tool, ensuring it's only truly removed when all references are released.
-- **⚖️ Controlled Overriding:** Explicitly support `allowOverride` mode to update tool implementations while keeping dependency chains intact.
-- **🚀 Lifecycle Hooks:** Use the `setup` method for one-time initialization logic.
-- **🔄 Asynchronous Capabilities:** Built-in support for cancellable tasks, timeouts, and concurrency control using `makeToolFuncCancelable`.
-- **🌊 Streamable Responses:** Easily create and handle streaming responses with the `stream` property and `createCallbacksTransformer`.
+- **📦 Modular & Reusable Tools:** Define functions as `ToolFunc` instances with rich metadata, maintaining a clear separation between static management and instance logic.
+- **🌐 Global Registry:** The static registry (`ToolFunc.items`) allows any part of your application to access and run registered functions by name.
+- **🏛️ Hierarchical Registries & Polymorphism:** Supports isolating registries via the prototype chain (`isolateRegistry`). Enables plugin systems to "shadow" parent tools and provides intelligent late-binding to ensure dependency polymorphism and sibling stability.
+- **🔗 Dependency Management:** Declare dependencies on other `ToolFunc`s using the `depends` property. Supports local aliasing, and dependencies are automatically registered.
+- **🔢 Reference Counted Registration:** Allows multiple modules to share the same tool. Automatically manages dependency lifecycles, only physically unregistering a tool when all references are released.
+- **⚖️ Controlled Overrides:** Explicitly supports `allowOverride` mode to safely update tool implementations (e.g., hot-reloading) while maintaining dependency chain integrity.
+- **🧩 Execution Context & Concurrency Isolation:** Achieves concurrency safety with minimal memory overhead using prototype-chain-based "Shadow Instances". Safely access environmental data (like `traceId`, `signal`) via `this.ctx` and propagate context using the `tool.with(ctx)` chainable API.
+- **🔄 Async & Cancellable Tasks:** Transparently integrates cancellation capabilities via `makeToolFuncCancelable`. Automatically injects an `aborter` on every call, supports timeouts and `AbortSignal` linkage, and returns a `task` handle for external lifecycle control.
+- **🌊 Streaming Responses:** Easily create streaming outputs using the `stream` property. Process stream events seamlessly with `createCallbacksTransformer`, featuring unified cleanup hooks and zero-copy optimization.
+- **🚀 Lifecycle Hooks:** Use the `setup` method to execute one-time initialization logic and safely modify instance state.
+- **🧬 Flexible Argument Normalization:** Supports smart pattern recognition (strings, functions, objects) and deep merging during construction and registration to easily compose tool metadata.
+- **🔀 Dual-Mode Parameter Support:** Supports both semantically clear object parameters (`run`) and fixed-order positional parameters (`runWithPos`).
+- **🏷️ Aliases & Tags:** Assign multiple names (`alias`) or `tags` to functions for flexibility and grouping.
 
 ## 📦 Installation
 
