@@ -2,21 +2,17 @@
 
 ***
 
-[@isdk/tool-func](../globals.md) / BaseFunc
+[@isdk/tool-func](../globals.md) / RegisterOptions
 
-# Interface: BaseFunc
+# Interface: RegisterOptions
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:264](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L264)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:238](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L238)
 
-Represents a fully-defined tool function where the implementation is mandatory.
+Options for registering a tool function.
 
 ## Extends
 
-- [`BaseFuncItem`](BaseFuncItem.md)
-
-## Extended by
-
-- [`ToolFunc`](../classes/ToolFunc.md)
+- [`FuncItem`](FuncItem.md)
 
 ## Properties
 
@@ -30,7 +26,20 @@ Optional aliases for the function name.
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`alias`](BaseFuncItem.md#alias)
+[`FuncItem`](FuncItem.md).[`alias`](FuncItem.md#alias)
+
+***
+
+### allowOverride?
+
+> `optional` **allowOverride?**: `boolean` \| \{ `alias?`: `boolean`; `name?`: `boolean`; \}
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:245](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L245)
+
+Optional override behavior:
+- `true`: Allows overwriting an existing function with the same name.
+- `{ name: true }`: Same as `true`.
+- `{ alias: true }`: Allows stealing existing aliases from other functions.
 
 ***
 
@@ -60,7 +69,7 @@ const func = new ToolFunc({
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`asyncFeatures`](BaseFuncItem.md#asyncfeatures)
+[`FuncItem`](FuncItem.md).[`asyncFeatures`](FuncItem.md#asyncfeatures)
 
 ***
 
@@ -99,7 +108,7 @@ mainFunc.register();
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`depends`](BaseFuncItem.md#depends)
+[`FuncItem`](FuncItem.md).[`depends`](FuncItem.md#depends)
 
 ***
 
@@ -113,7 +122,21 @@ A detailed description of what the function does.
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`description`](BaseFuncItem.md#description)
+[`FuncItem`](FuncItem.md).[`description`](FuncItem.md#description)
+
+***
+
+### func?
+
+> `optional` **func?**: [`TFunc`](../type-aliases/TFunc.md)
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:232](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L232)
+
+The implementation of the tool function.
+
+#### Inherited from
+
+[`FuncItem`](FuncItem.md).[`func`](FuncItem.md#func)
 
 ***
 
@@ -127,7 +150,7 @@ If true, indicates that this function should be treated as a server-side API.
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`isApi`](BaseFuncItem.md#isapi)
+[`FuncItem`](FuncItem.md).[`isApi`](FuncItem.md#isapi)
 
 ***
 
@@ -141,7 +164,7 @@ The unique name of the function.
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`name`](BaseFuncItem.md#name)
+[`FuncItem`](FuncItem.md).[`name`](FuncItem.md#name)
 
 ***
 
@@ -155,7 +178,7 @@ Parameter definitions, which can be an object mapping names to definitions or an
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`params`](BaseFuncItem.md#params)
+[`FuncItem`](FuncItem.md).[`params`](FuncItem.md#params)
 
 ***
 
@@ -169,7 +192,7 @@ The expected return type of the function, described as a string or a JSON schema
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`result`](BaseFuncItem.md#result)
+[`FuncItem`](FuncItem.md).[`result`](FuncItem.md#result)
 
 ***
 
@@ -183,7 +206,7 @@ The execution scope or context (`this`) for the function.
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`scope`](BaseFuncItem.md#scope)
+[`FuncItem`](FuncItem.md).[`scope`](FuncItem.md#scope)
 
 ***
 
@@ -229,7 +252,7 @@ console.log(myFunc.customState); // Outputs: 'configured'
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`setup`](BaseFuncItem.md#setup)
+[`FuncItem`](FuncItem.md).[`setup`](FuncItem.md#setup)
 
 ***
 
@@ -244,7 +267,7 @@ Whether a specific call is streamed is determined by a `stream` property in the 
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`stream`](BaseFuncItem.md#stream)
+[`FuncItem`](FuncItem.md).[`stream`](FuncItem.md#stream)
 
 ***
 
@@ -258,7 +281,7 @@ Tags for grouping or filtering functions.
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`tags`](BaseFuncItem.md#tags)
+[`FuncItem`](FuncItem.md).[`tags`](FuncItem.md#tags)
 
 ***
 
@@ -272,28 +295,4 @@ A concise, human-readable title for the function, often used in UI or by AI.
 
 #### Inherited from
 
-[`BaseFuncItem`](BaseFuncItem.md).[`title`](BaseFuncItem.md#title)
-
-## Methods
-
-### func()
-
-> **func**(...`params`): `any`
-
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:270](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L270)
-
-The actual function implementation.
-
-#### Parameters
-
-##### params
-
-...`any`
-
-The parameters for the function.
-
-#### Returns
-
-`any`
-
-The result of the function.
+[`FuncItem`](FuncItem.md).[`title`](FuncItem.md#title)

@@ -8,7 +8,7 @@
 
 > **funcGetMeta**(`fn`): `any`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:905](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L905)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/func-meta.ts:32](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/func-meta.ts#L32)
 
 Retrieves metadata associated with a function or `ToolFunc` instance.
 
@@ -16,9 +16,9 @@ Retrieves metadata associated with a function or `ToolFunc` instance.
 
 ### fn
 
-The function or `ToolFunc` instance from which to retrieve metadata.
+`Function` \| [`ToolFunc`](../classes/ToolFunc.md)
 
-`Function` | [`ToolFunc`](../classes/ToolFunc.md)
+The function or `ToolFunc` instance from which to retrieve metadata.
 
 ## Returns
 

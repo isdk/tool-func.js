@@ -6,7 +6,7 @@
 
 # Interface: TaskPromise\<T\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:52](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L52)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:62](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L62)
 
 ## Extends
 
@@ -34,9 +34,9 @@ Defined in: @isdk/ai-tools/node\_modules/.pnpm/typescript@5.7.3/node\_modules/ty
 
 ### task?
 
-> `optional` **task**: [`TaskAbortController`](../classes/TaskAbortController.md)
+> `optional` **task?**: [`TaskAbortController`](../classes/TaskAbortController.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:53](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L53)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:63](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L63)
 
 ## Methods
 
@@ -58,9 +58,9 @@ Attaches a callback for only the rejection of the Promise.
 
 ##### onrejected?
 
-The callback to execute when the Promise is rejected.
+((`reason`) => `TResult` \| `PromiseLike`\<`TResult`\>) \| `null`
 
-`null` | (`reason`) => `TResult` \| `PromiseLike`\<`TResult`\>
+The callback to execute when the Promise is rejected.
 
 #### Returns
 
@@ -87,9 +87,9 @@ resolved value cannot be modified from the callback.
 
 ##### onfinally?
 
-The callback to execute when the Promise is settled (fulfilled or rejected).
+(() => `void`) \| `null`
 
-`null` | () => `void`
+The callback to execute when the Promise is settled (fulfilled or rejected).
 
 #### Returns
 
@@ -125,15 +125,15 @@ Attaches callbacks for the resolution and/or rejection of the Promise.
 
 ##### onfulfilled?
 
-The callback to execute when the Promise is resolved.
+((`value`) => `TResult1` \| `PromiseLike`\<`TResult1`\>) \| `null`
 
-`null` | (`value`) => `TResult1` \| `PromiseLike`\<`TResult1`\>
+The callback to execute when the Promise is resolved.
 
 ##### onrejected?
 
-The callback to execute when the Promise is rejected.
+((`reason`) => `TResult2` \| `PromiseLike`\<`TResult2`\>) \| `null`
 
-`null` | (`reason`) => `TResult2` \| `PromiseLike`\<`TResult2`\>
+The callback to execute when the Promise is rejected.
 
 #### Returns
 

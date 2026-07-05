@@ -6,7 +6,7 @@
 
 # Interface: FuncItem
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:185](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L185)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:227](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L227)
 
 Extends `BaseFuncItem` to include the actual function implementation.
 
@@ -14,13 +14,17 @@ Extends `BaseFuncItem` to include the actual function implementation.
 
 - [`BaseFuncItem`](BaseFuncItem.md)
 
+## Extended by
+
+- [`RegisterOptions`](RegisterOptions.md)
+
 ## Properties
 
 ### alias?
 
-> `optional` **alias**: `string` \| `string`[]
+> `optional` **alias?**: `string` \| `string`[]
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:131](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L131)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:173](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L173)
 
 Optional aliases for the function name.
 
@@ -32,9 +36,9 @@ Optional aliases for the function name.
 
 ### asyncFeatures?
 
-> `optional` **asyncFeatures**: `number`
+> `optional` **asyncFeatures?**: `number`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:145](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L145)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:187](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L187)
 
 A bitmask representing asynchronous features supported by the function, built from `AsyncFeatureBits`.
 This allows the system to understand if a function supports capabilities like cancellation or multi-tasking.
@@ -62,9 +66,9 @@ const func = new ToolFunc({
 
 ### depends?
 
-> `optional` **depends**: `object`
+> `optional` **depends?**: `object`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:168](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L168)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:210](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L210)
 
 A map of dependencies this function has on other tool functions.
 Declaring dependencies ensures that they are automatically registered when this function is registered.
@@ -101,9 +105,9 @@ mainFunc.register();
 
 ### description?
 
-> `optional` **description**: `string`
+> `optional` **description?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:173](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L173)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:215](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L215)
 
 A detailed description of what the function does.
 
@@ -115,9 +119,9 @@ A detailed description of what the function does.
 
 ### func?
 
-> `optional` **func**: [`TFunc`](../type-aliases/TFunc.md)
+> `optional` **func?**: [`TFunc`](../type-aliases/TFunc.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:190](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L190)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:232](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L232)
 
 The implementation of the tool function.
 
@@ -125,9 +129,9 @@ The implementation of the tool function.
 
 ### isApi?
 
-> `optional` **isApi**: `boolean`
+> `optional` **isApi?**: `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:120](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L120)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:162](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L162)
 
 If true, indicates that this function should be treated as a server-side API.
 
@@ -139,9 +143,9 @@ If true, indicates that this function should be treated as a server-side API.
 
 ### name?
 
-> `optional` **name**: `string`
+> `optional` **name?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:77](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L77)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:119](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L119)
 
 The unique name of the function.
 
@@ -153,9 +157,9 @@ The unique name of the function.
 
 ### params?
 
-> `optional` **params**: [`FuncParams`](FuncParams.md) \| [`FuncParam`](FuncParam.md)[]
+> `optional` **params?**: [`FuncParams`](FuncParams.md) \| [`FuncParam`](FuncParam.md)[]
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:82](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L82)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:124](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L124)
 
 Parameter definitions, which can be an object mapping names to definitions or an array for positional parameters.
 
@@ -167,9 +171,9 @@ Parameter definitions, which can be an object mapping names to definitions or an
 
 ### result?
 
-> `optional` **result**: `string` \| `Record`\<`string`, `any`\>
+> `optional` **result?**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:87](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L87)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:129](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L129)
 
 The expected return type of the function, described as a string or a JSON schema object.
 
@@ -181,9 +185,9 @@ The expected return type of the function, described as a string or a JSON schema
 
 ### scope?
 
-> `optional` **scope**: `any`
+> `optional` **scope?**: `any`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:92](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L92)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:134](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L134)
 
 The execution scope or context (`this`) for the function.
 
@@ -193,11 +197,11 @@ The execution scope or context (`this`) for the function.
 
 ***
 
-### setup()?
+### setup?
 
-> `optional` **setup**: (`this`, `options?`) => `void`
+> `optional` **setup?**: (`this`, `options?`) => `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:115](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L115)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:157](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L157)
 
 A lifecycle hook called once during the `ToolFunc` instance's initialization.
 It allows for initial setup, state configuration, or property modification on the instance
@@ -241,9 +245,9 @@ console.log(myFunc.customState); // Outputs: 'configured'
 
 ### stream?
 
-> `optional` **stream**: `boolean`
+> `optional` **stream?**: `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:126](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L126)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:168](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L168)
 
 If true, indicates that the function has the *capability* to stream its output.
 Whether a specific call is streamed is determined by a `stream` property in the runtime parameters.
@@ -256,9 +260,9 @@ Whether a specific call is streamed is determined by a `stream` property in the 
 
 ### tags?
 
-> `optional` **tags**: `string` \| `string`[]
+> `optional` **tags?**: `string` \| `string`[]
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:97](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L97)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:139](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L139)
 
 Tags for grouping or filtering functions.
 
@@ -270,9 +274,9 @@ Tags for grouping or filtering functions.
 
 ### title?
 
-> `optional` **title**: `string`
+> `optional` **title?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:178](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L178)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:220](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L220)
 
 A concise, human-readable title for the function, often used in UI or by AI.
 

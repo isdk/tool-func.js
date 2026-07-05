@@ -4,11 +4,11 @@
 
 [@isdk/tool-func](../globals.md) / TFunc
 
-# Type Alias: TFunc()
+# Type Alias: TFunc
 
 > **TFunc** = (`this`, ...`params`) => `any`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:66](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L66)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:108](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L108)
 
 Defines the signature for a tool function's implementation.
 

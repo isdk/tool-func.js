@@ -6,7 +6,7 @@
 
 # Interface: CancelableAbilityOptions
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:11](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L11)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:11](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L11)
 
 ## Extends
 
@@ -14,23 +14,23 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 ## Indexable
 
-\[`name`: `string`\]: `any`
+> \[`name`: `string`\]: `any`
 
 ## Properties
 
 ### asyncFeatures?
 
-> `optional` **asyncFeatures**: [`AsyncFeatures`](../enumerations/AsyncFeatures.md)
+> `optional` **asyncFeatures?**: [`AsyncFeatures`](../enumerations/AsyncFeatures.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:12](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L12)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:12](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L12)
 
 ***
 
 ### classMethods?
 
-> `optional` **classMethods**: `Record`\<`string`, `Function`\>
+> `optional` **classMethods?**: `Record`\<`string`, `Function`\>
 
-Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_modules/custom-ability/lib/custom-ability.d.ts:13
+Defined in: @isdk/util/node\_modules/.pnpm/custom-ability@2.2.0/node\_modules/custom-ability/lib/custom-ability.d.ts:13
 
 #### Inherited from
 
@@ -40,9 +40,9 @@ Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_module
 
 ### exclude?
 
-> `optional` **exclude**: `string` \| `string`[]
+> `optional` **exclude?**: `string` \| `string`[]
 
-Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_modules/custom-ability/lib/custom-ability.d.ts:11
+Defined in: @isdk/util/node\_modules/.pnpm/custom-ability@2.2.0/node\_modules/custom-ability/lib/custom-ability.d.ts:11
 
 #### Inherited from
 
@@ -52,9 +52,9 @@ Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_module
 
 ### id?
 
-> `optional` **id**: `string`
+> `optional` **id?**: `string`
 
-Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_modules/custom-ability/lib/custom-ability.d.ts:8
+Defined in: @isdk/util/node\_modules/.pnpm/custom-ability@2.2.0/node\_modules/custom-ability/lib/custom-ability.d.ts:8
 
 #### Inherited from
 
@@ -64,9 +64,9 @@ Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_module
 
 ### include?
 
-> `optional` **include**: `string` \| `string`[]
+> `optional` **include?**: `string` \| `string`[]
 
-Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_modules/custom-ability/lib/custom-ability.d.ts:10
+Defined in: @isdk/util/node\_modules/.pnpm/custom-ability@2.2.0/node\_modules/custom-ability/lib/custom-ability.d.ts:10
 
 #### Inherited from
 
@@ -76,25 +76,25 @@ Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_module
 
 ### isReadyFn?
 
-> `optional` **isReadyFn**: `SemaphoreIsReadyFuncType`
+> `optional` **isReadyFn?**: `SemaphoreIsReadyFuncType`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:14](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L14)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:14](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L14)
 
 ***
 
 ### maxTaskConcurrency?
 
-> `optional` **maxTaskConcurrency**: `number`
+> `optional` **maxTaskConcurrency?**: `number`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:13](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L13)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:13](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L13)
 
 ***
 
 ### methods?
 
-> `optional` **methods**: `Record`\<`string`, `Function`\>
+> `optional` **methods?**: `Record`\<`string`, `Function`\>
 
-Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_modules/custom-ability/lib/custom-ability.d.ts:12
+Defined in: @isdk/util/node\_modules/.pnpm/custom-ability@2.2.0/node\_modules/custom-ability/lib/custom-ability.d.ts:12
 
 #### Inherited from
 
@@ -104,10 +104,22 @@ Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_module
 
 ### mode?
 
-> `optional` **mode**: `number`
+> `optional` **mode?**: `number`
 
-Defined in: @isdk/ai-tools/node\_modules/.pnpm/custom-ability@2.0.1/node\_modules/custom-ability/lib/custom-ability.d.ts:9
+Defined in: @isdk/util/node\_modules/.pnpm/custom-ability@2.2.0/node\_modules/custom-ability/lib/custom-ability.d.ts:9
 
 #### Inherited from
 
 `AbilityOptions.mode`
+
+***
+
+### rename?
+
+> `optional` **rename?**: `Record`\<`string`, `string`\>
+
+Defined in: @isdk/util/node\_modules/.pnpm/custom-ability@2.2.0/node\_modules/custom-ability/lib/custom-ability.d.ts:14
+
+#### Inherited from
+
+`AbilityOptions.rename`

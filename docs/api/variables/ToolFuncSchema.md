@@ -8,7 +8,7 @@
 
 > `const` **ToolFuncSchema**: `object`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:822](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L822)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:1481](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L1481)
 
 **`Internal`**
 
@@ -69,7 +69,7 @@ This controls how properties are assigned and exported.
 
 ###### value
 
-`string` | `Function`
+`string` \| `Function`
 
 ###### dest
 

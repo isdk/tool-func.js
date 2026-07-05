@@ -6,9 +6,9 @@
 
 # Function: funcWithMeta()
 
-> **funcWithMeta**(`fn`, `meta`, `ignoreExists?`): `undefined` \| `Function` \| [`ToolFunc`](../classes/ToolFunc.md)
+> **funcWithMeta**(`fn`, `meta`, `ignoreExists?`): `Function` \| [`ToolFunc`](../classes/ToolFunc.md) \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:887](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L887)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/func-meta.ts:14](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/func-meta.ts#L14)
 
 Attaches metadata to a function or `ToolFunc` object.
 
@@ -18,9 +18,9 @@ This utility merges the provided metadata with any existing metadata on the targ
 
 ### fn
 
-The function or `ToolFunc` instance to which metadata will be added.
+`Function` \| [`ToolFunc`](../classes/ToolFunc.md)
 
-`Function` | [`ToolFunc`](../classes/ToolFunc.md)
+The function or `ToolFunc` instance to which metadata will be added.
 
 ### meta
 
@@ -36,6 +36,6 @@ If `true`, new metadata overwrites existing keys. If `false`, it merges deeply, 
 
 ## Returns
 
-`undefined` \| `Function` \| [`ToolFunc`](../classes/ToolFunc.md)
+`Function` \| [`ToolFunc`](../classes/ToolFunc.md) \| `undefined`
 
 The updated function or `ToolFunc` with metadata, or `undefined` if the operation was skipped.

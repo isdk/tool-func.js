@@ -24,15 +24,20 @@
 - [FuncParam](interfaces/FuncParam.md)
 - [FuncParams](interfaces/FuncParams.md)
 - [Funcs](interfaces/Funcs.md)
+- [RegisterOptions](interfaces/RegisterOptions.md)
 - [StreamCallbacksAndOptions](interfaces/StreamCallbacksAndOptions.md)
 - [TaskAbortControllers](interfaces/TaskAbortControllers.md)
 - [TaskPromise](interfaces/TaskPromise.md)
+- [ToolFuncContext](interfaces/ToolFuncContext.md)
 - [ToolFuncPackage](interfaces/ToolFuncPackage.md)
+- [ToolFuncRegistryIsolateOptions](interfaces/ToolFuncRegistryIsolateOptions.md)
+- [UnregisterOptions](interfaces/UnregisterOptions.md)
 
 ## Type Aliases
 
 - [AsyncTaskId](type-aliases/AsyncTaskId.md)
 - [FuncParamType](type-aliases/FuncParamType.md)
+- [StreamCloseStatus](type-aliases/StreamCloseStatus.md)
 - [TFunc](type-aliases/TFunc.md)
 
 ## Variables

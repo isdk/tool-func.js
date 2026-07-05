@@ -6,11 +6,11 @@
 
 # Class: CancelableAbility
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:56](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L56)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:66](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L66)
 
 ## Indexable
 
-\[`name`: `string`\]: `any`
+> \[`name`: `string`\]: `any`
 
 ## Constructors
 
@@ -26,49 +26,49 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:5
 
 ### \_\_task\_aborter
 
-> **\_\_task\_aborter**: `undefined` \| [`TaskAbortController`](TaskAbortController.md) \| [`TaskAbortControllers`](../interfaces/TaskAbortControllers.md)
+> **\_\_task\_aborter**: [`TaskAbortController`](TaskAbortController.md) \| [`TaskAbortControllers`](../interfaces/TaskAbortControllers.md) \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:68](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L68)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:78](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L78)
 
 ***
 
 ### \_\_task\_semaphore
 
-> **\_\_task\_semaphore**: `undefined` \| `Semaphore`
+> **\_\_task\_semaphore**: `Semaphore` \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:69](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L69)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:79](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L79)
 
 ***
 
 ### \_asyncFeatures?
 
-> `optional` **\_asyncFeatures**: `number`
+> `optional` **\_asyncFeatures?**: `number`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:57](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L57)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:67](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L67)
 
 ***
 
 ### \_isReadyFn?
 
-> `optional` **\_isReadyFn**: `SemaphoreIsReadyFuncType`
+> `optional` **\_isReadyFn?**: `SemaphoreIsReadyFuncType`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:59](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L59)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:69](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L69)
 
 ***
 
 ### \_maxTaskConcurrency
 
-> **\_maxTaskConcurrency**: `undefined` \| `number`
+> **\_maxTaskConcurrency**: `number` \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:58](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L58)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:68](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L68)
 
 ***
 
-### cleanMultiTaskAborter()
+### cleanMultiTaskAborter
 
 > **cleanMultiTaskAborter**: (`id`, `aborters`) => `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:66](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L66)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:76](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L76)
 
 #### Parameters
 
@@ -86,11 +86,11 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:6
 
 ***
 
-### generateAsyncTaskId()
+### generateAsyncTaskId
 
 > **generateAsyncTaskId**: (`taskId?`, `aborters?`) => [`AsyncTaskId`](../type-aliases/AsyncTaskId.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:65](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L65)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:75](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L75)
 
 #### Parameters
 
@@ -112,13 +112,13 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:6
 
 #### Get Signature
 
-> **get** **maxTaskConcurrency**(): `undefined` \| `number`
+> **get** **maxTaskConcurrency**(): `number` \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:71](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L71)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:81](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L81)
 
 ##### Returns
 
-`undefined` \| `number`
+`number` \| `undefined`
 
 ***
 
@@ -126,13 +126,13 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:7
 
 #### Get Signature
 
-> **get** **semaphore**(): `undefined` \| `Semaphore`
+> **get** **semaphore**(): `any`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:75](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L75)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:85](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L85)
 
 ##### Returns
 
-`undefined` \| `Semaphore`
+`any`
 
 ## Methods
 
@@ -140,7 +140,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:7
 
 > **\_cleanMultiTaskAborter**(`id`, `aborters`): `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:263](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L263)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:299](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L299)
 
 #### Parameters
 
@@ -162,7 +162,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:2
 
 > **\_generateAsyncTaskId**(`taskId?`, `aborters?`): [`AsyncTaskId`](../type-aliases/AsyncTaskId.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:155](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L155)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:174](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L174)
 
 #### Parameters
 
@@ -180,11 +180,59 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 ***
 
+### $\_prepareContext()
+
+> **$\_prepareContext**(`params?`, `ctx?`): [`ToolFuncContext`](../interfaces/ToolFuncContext.md)
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:400](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L400)
+
+Method overloading for ToolFunc._prepareContext
+
+#### Parameters
+
+##### params?
+
+`any`
+
+##### ctx?
+
+[`ToolFuncContext`](../interfaces/ToolFuncContext.md)
+
+#### Returns
+
+[`ToolFuncContext`](../interfaces/ToolFuncContext.md)
+
+***
+
+### $\_shouldIsolate()
+
+> **$\_shouldIsolate**(`params?`, `ctx?`): `boolean`
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:389](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L389)
+
+Method overloading for ToolFunc._shouldIsolate
+
+#### Parameters
+
+##### params?
+
+`any`
+
+##### ctx?
+
+[`ToolFuncContext`](../interfaces/ToolFuncContext.md)
+
+#### Returns
+
+`boolean`
+
+***
+
 ### $cleanMultiTaskAborter()
 
 > **$cleanMultiTaskAborter**(`id`, `aborters`): `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:243](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L243)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:278](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L278)
 
 #### Parameters
 
@@ -204,9 +252,9 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:2
 
 ### $generateAsyncTaskId()
 
-> **$generateAsyncTaskId**(`taskId?`, `aborters?`): `undefined` \| [`AsyncTaskId`](../type-aliases/AsyncTaskId.md)
+> **$generateAsyncTaskId**(`taskId?`, `aborters?`): [`AsyncTaskId`](../type-aliases/AsyncTaskId.md) \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:168](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L168)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:190](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L190)
 
 #### Parameters
 
@@ -220,7 +268,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 #### Returns
 
-`undefined` \| [`AsyncTaskId`](../type-aliases/AsyncTaskId.md)
+[`AsyncTaskId`](../type-aliases/AsyncTaskId.md) \| `undefined`
 
 ***
 
@@ -228,7 +276,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 > **abort**(`reason?`, `data?`): `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:320](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L320)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:362](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L362)
 
 #### Parameters
 
@@ -250,7 +298,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:3
 
 > **cleanTaskAborter**(`aborter`): `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:253](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L253)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:288](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L288)
 
 #### Parameters
 
@@ -266,9 +314,9 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:2
 
 ### createAborter()
 
-> **createAborter**(`params?`, `taskId?`, `raiseError?`): [`TaskAbortController`](TaskAbortController.md)
+> **createAborter**(`params?`, `taskId?`, `raiseError?`, `ctx?`): [`TaskAbortController`](TaskAbortController.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:179](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L179)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:201](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L201)
 
 #### Parameters
 
@@ -284,6 +332,10 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 `boolean` = `true`
 
+##### ctx?
+
+[`ToolFuncContext`](../interfaces/ToolFuncContext.md)
+
 #### Returns
 
 [`TaskAbortController`](TaskAbortController.md)
@@ -294,7 +346,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 > **createTaskPromise**\<`Output`\>(`runTask`, `params`, `options?`): [`TaskPromise`](../interfaces/TaskPromise.md)\<`Output`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:267](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L267)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:303](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L303)
 
 #### Type Parameters
 
@@ -330,9 +382,9 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:2
 
 ### getRunningTask()
 
-> **getRunningTask**(`taskId?`): `undefined` \| [`TaskAbortController`](TaskAbortController.md)
+> **getRunningTask**(`taskId?`): [`TaskAbortController`](TaskAbortController.md) \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:117](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L117)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:129](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L129)
 
 #### Parameters
 
@@ -342,7 +394,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 #### Returns
 
-`undefined` \| [`TaskAbortController`](TaskAbortController.md)
+[`TaskAbortController`](TaskAbortController.md) \| `undefined`
 
 ***
 
@@ -350,7 +402,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 > **getRunningTaskCount**(): `number`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:140](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L140)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:153](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L153)
 
 #### Returns
 
@@ -360,19 +412,19 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 ### getSemaphore()
 
-> **getSemaphore**(`isReadyFn`): `undefined` \| `Semaphore`
+> **getSemaphore**(`isReadyFn?`): `any`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:79](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L79)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:89](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L89)
 
 #### Parameters
 
-##### isReadyFn
+##### isReadyFn?
 
-`undefined` | `SemaphoreIsReadyFuncType`
+`SemaphoreIsReadyFuncType` \| `undefined`
 
 #### Returns
 
-`undefined` \| `Semaphore`
+`any`
 
 ***
 
@@ -380,7 +432,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:7
 
 > **hasAsyncFeature**(`feature`): `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:96](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L96)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:107](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L107)
 
 #### Parameters
 
@@ -398,7 +450,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:9
 
 > **isAborted**(`taskId?`): `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:102](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L102)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:113](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L113)
 
 #### Parameters
 
@@ -414,9 +466,9 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 ### runAsyncCancelableTask()
 
-> **runAsyncCancelableTask**\<`Output`\>(`params`, `runTask`, `options?`): [`TaskPromise`](../interfaces/TaskPromise.md)\<`Output`\>
+> **runAsyncCancelableTask**\<`Output`\>(`params?`, `runTask`, `options?`): [`TaskPromise`](../interfaces/TaskPromise.md)\<`Output`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:305](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L305)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:347](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L347)
 
 #### Type Parameters
 
@@ -426,7 +478,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:3
 
 #### Parameters
 
-##### params
+##### params?
 
 `Record`\<`string`, `any`\> = `{}`
 
@@ -458,7 +510,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:3
 
 > `static` **hasAsyncFeature**(`feature`): `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:89](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/utils/cancelable-ability.ts#L89)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:100](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L100)
 
 #### Parameters
 

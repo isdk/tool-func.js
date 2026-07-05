@@ -6,7 +6,7 @@
 
 # Interface: ToolFuncPackage
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:217](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L217)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:284](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L284)
 
 Describes a package of tool functions, including methods for registration and unregistration.
 
@@ -16,17 +16,17 @@ Describes a package of tool functions, including methods for registration and un
 
 > **name**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:222](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L222)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:289](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L289)
 
 The name of the tool function package.
 
 ***
 
-### register()
+### register
 
 > **register**: (`data?`) => `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:227](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L227)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:294](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L294)
 
 A method to register all functions within the package.
 
@@ -44,11 +44,11 @@ Optional data to pass to the registration process.
 
 ***
 
-### unregister()?
+### unregister?
 
-> `optional` **unregister**: () => `void`
+> `optional` **unregister?**: () => `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:231](https://github.com/isdk/tool-func.js/blob/c7a20c117738f7c649e6488f0c70165b848eb802/src/tool-func.ts#L231)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:298](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L298)
 
 An optional method to unregister all functions within the package.
 
