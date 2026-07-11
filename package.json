@@ -16,12 +16,12 @@
   "dependencies": {
     "@isdk/common-error": "^0.2.0",
     "@isdk/hash": "workspace:^",
-    "@isdk/util": "^0.3.3",
-    "abstract-error": "^2.0.0",
-    "custom-ability": "^2.0.1",
+    "@isdk/util": "^0.3.11",
+    "abstract-error": "^2.0.1",
+    "custom-ability": "^2.3.1",
     "lodash-es": "^4.17.21",
-    "property-manager": "^3.0.3",
-    "util-ex": "^2.4.0"
+    "property-manager": "^4.0.0",
+    "util-ex": "^2.7.1"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.10.1",
