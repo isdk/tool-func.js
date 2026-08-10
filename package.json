@@ -14,7 +14,7 @@
     }
   },
   "dependencies": {
-    "@isdk/common-error": "^0.2.0",
+    "@isdk/common-error": "workspace:^",
     "@isdk/hash": "workspace:^",
     "@isdk/util": "^0.3.11",
     "abstract-error": "^2.0.1",
