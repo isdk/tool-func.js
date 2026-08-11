@@ -37,6 +37,8 @@ const getUser = new ToolFunc({
 
 ```typescript
 getUser.register()
+// 还可以这样注册：
+// ToolFunc.register(getUser)
 // 现在全局可通过名字 'getUser' 找到它
 ```
 
