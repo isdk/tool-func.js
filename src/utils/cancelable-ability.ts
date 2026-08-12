@@ -379,7 +379,7 @@ export class CancelableAbility {
     .then((result: any) => {
       if (result && result instanceof ReadableStream) {
         let streamController: any
-        const onStart = (controller) => {
+        const onStart = (controller: TransformStreamDefaultController) => {
           streamController = controller
           defineProperty(aborter, 'streamController', controller)
           let controllers = aborter.streamControllers

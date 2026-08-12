@@ -1,4 +1,4 @@
-import {vi as jest} from 'vitest'
+import {beforeEach, describe, expect, it, vi as jest} from 'vitest'
 import { ToolFunc } from '../tool-func'
 import { AsyncTaskId, CancelableAbility, makeToolFuncCancelable, TaskAbortController, TaskAbortControllers, TaskPromise } from './cancelable-ability'
 import { AsyncFeatureBits, AsyncFeatures, ToolAsyncCancelableBit, ToolAsyncMultiTaskBit } from './async-features'
@@ -793,7 +793,7 @@ describe('CancelableAbility', () => {
     const host = (testStreamTask as any)._origin || testStreamTask
     const taskInfo = testStreamTask.run() as TaskPromise<ReadableStream>
     const aborter = taskInfo.task!
-    const id = aborter.id
+    const id = aborter.id!
 
     const stream = await taskInfo
     const reader = stream.getReader()

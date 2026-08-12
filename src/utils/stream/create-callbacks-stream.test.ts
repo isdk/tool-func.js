@@ -1,4 +1,4 @@
-import { vi as jest } from 'vitest'
+import { describe, expect, it, vi, vi as jest } from 'vitest'
 import { createCallbacksTransformer, StreamCallbacksAndOptions } from './create-callbacks-stream'
 
 describe('createCallbacksTransformer', () => {

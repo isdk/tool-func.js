@@ -434,7 +434,7 @@ describe('CancelableAbility Context Support', () => {
 
     class NestedRefcountTool extends ToolFunc {
       func() {
-        return this.runAsyncCancelableTask({}, async (_params, aborter: TaskAbortController) => {
+        return this.runAsyncCancelableTask({}, async (_params: any, aborter: TaskAbortController) => {
           // 内层 60ms 结束；外层继续运行 120ms（远超 100ms deadline）
           await this.runAs('nestedRefcountSub', { waitTime: 60 })
           const end = Date.now() + 120
