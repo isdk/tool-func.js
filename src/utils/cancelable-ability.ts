@@ -17,8 +17,13 @@ export interface CancelableAbilityOptions extends AbilityOptions {
 export class TaskAbortController extends AbortController {
   declare id?: AsyncTaskId
   declare timeoutId?: any
+  /** 兼容性展示字段（last-wins），流的错误通知已改由 streamControllers 集合驱动 */
   declare streamController?: ReadableStreamDefaultController
+  /** 共享该 aborter 的并发任务各自的流控制器（避免单值字段互相覆盖） */
+  declare streamControllers?: any[]
   declare parent: CancelableAbility
+  /** 共享该 aborter 的嵌套任务引用计数，用于决定何时清理 timeout 定时器 */
+  declare _taskCount?: number
 
   constructor(parent: CancelableAbility) {
     super()
@@ -92,7 +97,8 @@ export class CancelableAbility {
     let result = host.__task_semaphore
     if (maxTaskConcurrency > 0 && !result) {
       if (isReadyFn) {isReadyFn = isReadyFn.bind(host)}
-      result = host.__task_semaphore = new Semaphore(maxTaskConcurrency-1, {isReadyFn})
+      // maxTaskConcurrency 即最大并发数（不再 -1，修复有效并发恒少一个的问题）
+      result = host.__task_semaphore = new Semaphore(maxTaskConcurrency, {isReadyFn})
     }
     return result
   }
@@ -191,7 +197,8 @@ export class CancelableAbility {
     const superGenerateAsyncTaskId = (this as any).super
     const that = (this as any).self || this
     if (superGenerateAsyncTaskId) {
-      taskId = superGenerateAsyncTaskId.call(that, taskId)
+      // 必须把 aborters 透传给自定义实现，否则其无法感知任务池
+      taskId = superGenerateAsyncTaskId.call(that, taskId, aborters)
     } else {
       taskId = this._generateAsyncTaskId(taskId, aborters)
     }
@@ -205,10 +212,16 @@ export class CancelableAbility {
 
     // 优先级：params.aborter > ctx.aborter > new
     let result: TaskAbortController = params?.aborter || ctx?.aborter || new TaskAbortController(host)
+    const externalAborterSignals: AbortSignal[] = []
     if (!(result instanceof TaskAbortController)) {
-      if ((result as any) instanceof AbortController) {
-        Object.setPrototypeOf(result, TaskAbortController.prototype)
-        defineProperty(result, 'parent', host)
+      const extAborter = result as unknown as AbortController
+      if (extAborter instanceof AbortController) {
+        // 外部传入的原生 AbortController：不篡改其原型，而是包装一个内部 TaskAbortController，
+        // 并把外部 controller 的 signal 当作普通外部信号链接。
+        // 这样每个任务拥有独立的 id/timeout/streamController，多个任务共享同一个外部
+        // controller 时互不覆盖；中止外部 controller 依然会联动中止所有相关任务。
+        externalAborterSignals.push(extAborter.signal)
+        result = new TaskAbortController(host)
       } else {
         throw new CommonError('aborter should be an AbortController', this.name, ErrorCode.InvalidArgument)
       }
@@ -229,8 +242,9 @@ export class CancelableAbility {
       host.__task_aborter = result
     }
 
-    // 2) 链接外部信号
+    // 2) 链接外部信号（含被包装的外部 aborter 的 signal）
     const extSignals = [
+      ...externalAborterSignals,
       ...toSignalArray(params?.signal),
       ...toSignalArray(params?.signals),
       ...toSignalArray(ctx?.signal),
@@ -244,13 +258,18 @@ export class CancelableAbility {
       }
     }
 
-    const timeout = params?.timeout || ctx?.timeout
-    if (timeout > 0) {
+    // 优先级：params.timeout > ctx.timeout；params.timeout=0 可显式关闭继承的超时
+    const timeout = params?.timeout ?? ctx?.timeout
+    // timeout 是“整个任务链”的最大执行时间：只在首次（最外层）设置，
+    // 嵌套任务复用同一个 aborter 时不会重置或延长该定时器
+    if (timeout > 0 && result.timeoutId == null) {
       if (ctx) { ctx.timeout = timeout }
+      // 闭包捕获本次调用的 taskId（并发共享 aborter 时 result.id 会被覆盖，不可读）
+      const thisTaskId = taskId
       result.timeoutId = setTimeout(() => {
         result.timeoutId = undefined
         const data: any = {timeout}
-        if (isMultiTask) { data.taskId = result.id }
+        if (isMultiTask) { data.taskId = thisTaskId }
         this.abort('timeout', data)
       }, timeout)
     }
@@ -267,7 +286,15 @@ export class CancelableAbility {
           this.emit('aborting', signal.reason, (signal.reason as any)?.data)
         }
       } finally {
-        try { result.streamController?.error?.(signal.reason) } catch {}
+        try {
+          // 并发共享同一 aborter 的流任务各自持有独立 controller，中止时全部 error
+          const controllers = result.streamControllers
+          if (controllers?.length) {
+            for (const c of [...controllers]) {
+              try { c.error?.(signal.reason) } catch {}
+            }
+          }
+        } catch {}
       }
 
     })
@@ -285,12 +312,14 @@ export class CancelableAbility {
     }
   }
 
-  cleanTaskAborter(aborter: TaskAbortController) {
+  cleanTaskAborter(aborter: TaskAbortController, taskId?: AsyncTaskId) {
     const isMultiTask = this.hasAsyncFeature(ToolAsyncMultiTaskBit)
     const host = (this as any)._origin || this
     if (isMultiTask) {
       const aborters = host.__task_aborter as unknown as TaskAbortControllers
-      this.cleanMultiTaskAborter(aborter.id!, aborters)
+      // 权威身份：本次调用闭包捕获的 taskId（并发共享 ctx/aborter 时 aborter.id 不可靠，仅作兜底）
+      const id = taskId ?? aborter.id!
+      this.cleanMultiTaskAborter(id, aborters)
     } else {
       host.__task_aborter = undefined
     }
@@ -300,38 +329,96 @@ export class CancelableAbility {
     if (typeof id === 'number') { aborters[id] = undefined } else { delete aborters[id] }
   }
 
+  /**
+   * 为本次调用解析每任务 taskId（multitask 模式下预生成并返回）。
+   *
+   * 并发任务可能共享同一个 ctx（如同一个 `with()` runner 上的并发 `run()`）与同一个 aborter，
+   * 因此 taskId 必须在调用方作为局部变量持有、通过闭包传递，
+   * 而不能存到共享对象上（`ctx.taskId` / `aborter.id` 都会被覆盖）。
+   */
+  _resolveTaskId(taskId?: AsyncTaskId): AsyncTaskId|undefined {
+    if (this.hasAsyncFeature(ToolAsyncMultiTaskBit)) {
+      if (taskId == null) {
+        const host = (this as any)._origin || this
+        if (host.__task_aborter == null) { host.__task_aborter = {} }
+        taskId = this.generateAsyncTaskId(taskId, host.__task_aborter as unknown as TaskAbortControllers)
+      }
+    }
+    return taskId
+  }
+
   createTaskPromise<Output = any>(runTask: (params: Record<string, any>, aborter: TaskAbortController) => Promise<Output>, params: Record<string, any>, options?: {taskId?: AsyncTaskId, raiseError?: boolean}) {
     // 优先从 this.ctx 获取
-    const aborter = this.createAborter(params, options?.taskId, options?.raiseError, (this as any).ctx);
+    const taskId = this._resolveTaskId(options?.taskId)
+    const aborter = this.createAborter(params, taskId, options?.raiseError, (this as any).ctx);
     if (params === undefined) {params = {}}
     if (typeof params === 'object') {
       params.aborter = aborter
     }
 
-    const taskPromise: TaskPromise<Output> = runTask(params, aborter)
+    const taskPromise: TaskPromise<Output> = this._runCancelableTask(runTask, params, aborter, taskId)
+    taskPromise.task = aborter
+
+    return taskPromise
+  }
+
+  /**
+   * 执行任务并绑定清理逻辑（任务池注销 / 流管道 / timeout 清理 / 外部信号监听清理）。
+   *
+   * - 通过 Promise.resolve().then 延迟调用 runTask，使同步 throw 也走 reject 路径，
+   *   保证 .catch/.finally 清理逻辑必然执行，避免 aborter 泄漏。
+   * - 引用计数：嵌套任务复用同一个 aborter 时，只有最后一个任务结束时才清理 timeout
+   *   定时器，保证 timeout 覆盖整个任务链。计数以“已启动”的任务为准（排队中尚未
+   *   运行的任务不计入），故并发共享 aborter + 信号量排队时，最后一个启动的任务
+   *   结束即清理定时器，组级 deadline 以启动阶段为界。
+   */
+  _runCancelableTask<Output = any>(runTask: (params: Record<string, any>, aborter: TaskAbortController) => Promise<Output>, params: Record<string, any>, aborter: TaskAbortController, taskId?: AsyncTaskId): Promise<Output> {
+    aborter._taskCount = (aborter._taskCount || 0) + 1
+
+    return Promise.resolve().then(() => runTask(params, aborter))
     .then((result: any) => {
       if (result && result instanceof ReadableStream) {
-        const onStart = (controller) => { defineProperty(aborter, 'streamController', controller) }
-        const onCleanAborter = () => {this.cleanTaskAborter(aborter)}
+        let streamController: any
+        const onStart = (controller) => {
+          streamController = controller
+          defineProperty(aborter, 'streamController', controller)
+          let controllers = aborter.streamControllers
+          if (!controllers) { controllers = aborter.streamControllers = [] }
+          controllers.push(controller)
+        }
+        const onCleanAborter = () => {
+          const controllers = aborter.streamControllers
+          if (streamController && controllers) {
+            const i = controllers.indexOf(streamController)
+            if (i >= 0) { controllers.splice(i, 1) }
+            if (!controllers.length) { aborter.streamControllers = undefined }
+          }
+          this.cleanTaskAborter(aborter, taskId)
+        }
         const onTransform = (chunk: any, controller: TransformStreamDefaultController) => {
           if (chunk && typeof chunk === 'object') {
-            chunk.taskId = aborter.id
+            // 每任务身份：闭包捕获的 taskId（共享 ctx/aborter 时 aborter.id 不可靠）
+            chunk.taskId = taskId ?? aborter.id
           }
           return chunk
         }
-        const transformer = createCallbacksTransformer({onStart, onFinal: onCleanAborter, onError: onCleanAborter, onTransform})
+        // onCancel：消费者取消流时（如 RPC 客户端断开）也必须注销任务
+        const transformer = createCallbacksTransformer({onStart, onFinal: onCleanAborter, onError: onCleanAborter, onCancel: onCleanAborter, onTransform})
         result = result.pipeThrough(transformer)
       } else {
-        this.cleanTaskAborter(aborter)
+        this.cleanTaskAborter(aborter, taskId)
       }
       return result
     }).catch((err) => {
-      this.cleanTaskAborter(aborter)
+      this.cleanTaskAborter(aborter, taskId)
       throw err
     }).finally(() => {
-      if (aborter.timeoutId) {
-        clearTimeout(aborter.timeoutId)
-        aborter.timeoutId = undefined
+      aborter._taskCount = (aborter._taskCount || 1) - 1
+      if (aborter._taskCount <= 0) {
+        if (aborter.timeoutId) {
+          clearTimeout(aborter.timeoutId)
+          aborter.timeoutId = undefined
+        }
       }
       const ctx = (this as any).ctx
       if (ctx?._linkCleanup) {
@@ -339,23 +426,30 @@ export class CancelableAbility {
         ctx._linkCleanup = undefined
       }
     })
-    taskPromise.task = aborter
-
-    return taskPromise
   }
 
   runAsyncCancelableTask<Output = any>(params: Record<string, any> = {}, runTask: (params: Record<string, any>, aborter: TaskAbortController) => Promise<Output>, options?: {taskId?: AsyncTaskId, raiseError?: boolean, isReadyFn?: SemaphoreIsReadyFuncType}) {
-    let taskPromise = this.createTaskPromise(runTask, params, options)
+    // 先解析每任务 taskId、创建 aborter（注册任务、设置 timeout），再获取信号量，
+    // 最后才真正执行 runTask——排队中的任务不会提前开始执行
+    const taskId = this._resolveTaskId(options?.taskId)
+    const aborter = this.createAborter(params, taskId, options?.raiseError, (this as any).ctx);
+    if (params === undefined) {params = {}}
+    if (typeof params === 'object') {
+      params.aborter = aborter
+    }
 
     const semaphore = this.getSemaphore(options?.isReadyFn)
+    let taskPromise: TaskPromise<Output>
     if (semaphore) {
-      const _taskPromise = taskPromise
-      const task = _taskPromise.task!
-      taskPromise = semaphore.acquire({signal: task.signal}).then(() => _taskPromise).finally(() => {
+      // 惰性执行：acquire 成功后才启动任务，maxTaskConcurrency 才能真正限制并发；
+      // 若在排队期间被中止，acquire 会 reject，任务不会被执行
+      taskPromise = semaphore.acquire({signal: aborter.signal}).then(() => this._runCancelableTask(runTask, params, aborter, taskId)).finally(() => {
         semaphore.release()
-      })
-      taskPromise.task = task
+      }) as TaskPromise<Output>
+    } else {
+      taskPromise = this._runCancelableTask(runTask, params, aborter, taskId) as TaskPromise<Output>
     }
+    taskPromise.task = aborter
     return taskPromise
   }
 
@@ -486,7 +580,7 @@ function linkAnyAbort(aborter: TaskAbortController, externalSignals: AbortSignal
   for (const s of externalSignals) {
     const fn = () => {
       const reason = (s as any).reason;
-      try { aborter.abort(reason || 'aborted'); } catch(e) {console.log(e)}
+      try { aborter.abort(reason || 'aborted'); } catch(e) {console.error(e)}
     };
     s.addEventListener('abort', fn, { once: true });
     offs.push(() => s.removeEventListener('abort', fn));

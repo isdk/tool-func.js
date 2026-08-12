@@ -168,8 +168,9 @@ describe('CancelableAbility', () => {
     expect(releaseMock).toHaveBeenCalledTimes(taskCount);
 
     // check maxTaskConcurrency limit
-    expect(pendingCountsBefore).toEqual([0, 0, 0, 1, 2, 3, 4, 5, 6, 7])
-    expect(pendingCountsAfter).toEqual([7, 6, 5, 4, 3, 2, 1, 0, 0, 0])
+    // maxTaskConcurrency=3 → 允许 3 个并发（修复 off-by-one 后不再少 1 个）
+    expect(pendingCountsBefore).toEqual([0, 0, 0, 0, 1, 2, 3, 4, 5, 6])
+    expect(pendingCountsAfter).toEqual([6, 5, 4, 3, 2, 1, 0, 0, 0, 0])
   })
 
   it('should run async multi tasks with stream', async () => {
@@ -343,12 +344,16 @@ describe('CancelableAbility', () => {
   it('should pass an aborter into task', async () => {
     const aborter = new AbortController()
 
-    const taskInfo = testSingleTask.run({content: '12345', aborter}) as TaskPromise<string>
+    const taskInfo = testSingleTask.run({content: '12345', waitTime: 100, aborter}) as TaskPromise<string>
     expect(taskInfo.task).toBeInstanceOf(TaskAbortController)
-    expect(taskInfo.task).toBe(aborter)
-    expect(aborter).toHaveProperty('parent', testSingleTask)
-    const result = await taskInfo
-    expect(result).toMatchObject({content: '12345'})
+    // 外部 AbortController 不再被篡改原型，而是被包装为内部 TaskAbortController
+    expect(taskInfo.task).not.toBe(aborter)
+    expect(taskInfo.task).toHaveProperty('parent', testSingleTask)
+    expect(aborter.signal.aborted).toBeFalsy()
+    // 中止外部 controller 会联动中止任务
+    aborter.abort('external abort')
+    await expect(taskInfo).rejects.toThrow(/external abort/)
+    expect(taskInfo.task!.signal.aborted).toBeTruthy()
   })
 
   it('should run multi async tasks and abort waiting task', async () => {
@@ -386,8 +391,8 @@ describe('CancelableAbility', () => {
     expect(Object.keys(errs)).toEqual(['3','7'])
     expect(Object.values(errs)).toMatchObject([{data: {what: 'test3'}}, {data: {what: 'test7'}}])
     // check maxTaskConcurrency limit
-    expect(pendingCountsBefore).toEqual([0, 0, 0, 1, 2, 3, 4, 5, 6, 7])
-    // expect(pendingCountsAfter).toEqual([7, 6, 5, 4, 3, 2, 1, 0, 0, 0])
+    expect(pendingCountsBefore).toEqual([0, 0, 0, 0, 1, 2, 3, 4, 5, 6])
+    // expect(pendingCountsAfter).toEqual([6, 5, 4, 3, 2, 1, 0, 0, 0, 0])
   })
 
   it('should run multi async tasks and abort running task', async () => {
@@ -666,5 +671,289 @@ describe('CancelableAbility', () => {
       expect(e).toBeInstanceOf(AbortError)
       expect(e.message).toContain('just a string')
     }
+    })
+
+    it('should limit real concurrent execution to maxTaskConcurrency (P0 regression)', async () => {
+    let running = 0
+    let maxSeen = 0
+    class ConcLimitTool extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any) => {
+          running++
+          maxSeen = Math.max(maxSeen, running)
+          await sleep(30)
+          running--
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(ConcLimitTool, {asyncFeatures: AsyncFeatures.MultiTask, maxTaskConcurrency: 2})
+    const tool = new ConcLimitTool('concLimit')
+
+    await Promise.all(Array.from({length: 6}, (_, i) => tool.run('t' + i)))
+
+    // 信号量必须先于任务执行被获取：maxTaskConcurrency=2 时最多同时执行 2 个任务
+    expect(maxSeen).toBe(2)
+    })
+
+    it('should pass the aborters map into a custom generateAsyncTaskId (P1 regression)', async () => {
+    const seenAborters: any[] = []
+    interface TestAbortersArgTool extends CancelableAbility {}
+    class TestAbortersArgTool extends ToolFunc {
+      generateAsyncTaskId(taskId?: AsyncTaskId, aborters?: TaskAbortControllers) {
+        seenAborters.push(aborters)
+        return this._generateAsyncTaskId(taskId, aborters)
+      }
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any) => {
+          await sleep(5)
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(TestAbortersArgTool, {asyncFeatures: AsyncFeatures.MultiTask})
+    const tool = new TestAbortersArgTool('abortersArgTest')
+
+    const taskInfo = tool.run('x') as TaskPromise
+    // 自定义 generateAsyncTaskId 必须能收到 aborters 映射表
+    expect(seenAborters).toHaveLength(1)
+    expect(seenAborters[0]).toBeDefined()
+    expect(typeof (taskInfo.task as any).id).toBe('number')
+    await taskInfo
+    })
+
+    it('should keep per-task id and timeout isolated when sharing an external AbortController (P2 regression)', async () => {
+    interface TestWaitMultiTool extends CancelableAbility {}
+    class TestWaitMultiTool extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any, aborter: TaskAbortController) => {
+          const end = Date.now() + (params?.waitTime ?? 100)
+          while (Date.now() < end) {
+            aborter.throwIfAborted()
+            await sleep(1)
+          }
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(TestWaitMultiTool, {asyncFeatures: AsyncFeatures.MultiTask})
+    const tool = new TestWaitMultiTool('sharedAborterTest')
+
+    const shared = new AbortController()
+    const p1 = tool.run({waitTime: 500, aborter: shared}) as TaskPromise
+    const p2 = tool.run({waitTime: 500, aborter: shared}) as TaskPromise
+    const a1 = p1.task!
+    const a2 = p2.task!
+
+    // 每个任务拿到独立的包装 aborter，id 互不覆盖，外部 controller 原型不被篡改
+    expect(a1).toBeInstanceOf(TaskAbortController)
+    expect(a1).not.toBe(shared)
+    expect(a2).not.toBe(shared)
+    expect(a1).not.toBe(a2)
+    expect(a1.id).not.toBe(a2.id)
+    expect(shared.signal.aborted).toBeFalsy()
+
+    // 中止共享的外部 controller → 两个任务都被联动中止
+    shared.abort('shared cancel')
+    await expect(p1).rejects.toThrow(/shared cancel/)
+    await expect(p2).rejects.toThrow(/shared cancel/)
+    })
+
+    it('should isolate timeout per task when sharing an external AbortController (P2 regression)', async () => {
+    interface TestWaitMultiTool2 extends CancelableAbility {}
+    class TestWaitMultiTool2 extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any, aborter: TaskAbortController) => {
+          const end = Date.now() + (params?.waitTime ?? 100)
+          while (Date.now() < end) {
+            aborter.throwIfAborted()
+            await sleep(1)
+          }
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(TestWaitMultiTool2, {asyncFeatures: AsyncFeatures.MultiTask})
+    const tool = new TestWaitMultiTool2('sharedTimeoutTest')
+
+    const shared = new AbortController()
+    const p1 = tool.run({waitTime: 500, timeout: 40, aborter: shared}) as TaskPromise
+    await sleep(10)
+    const p2 = tool.run({waitTime: 500, aborter: shared}) as TaskPromise
+
+    // 只有 p1 超时中止，p2 不受影响
+    await expect(p1).rejects.toThrow(/timeout/)
+    expect(p2.task!.signal.aborted).toBeFalsy()
+
+    shared.abort('cleanup')
+    await expect(p2).rejects.toThrow(/cleanup/)
+    })
+
+    it('should clean the task aborter when the stream reader cancels the stream (P2 regression)', async () => {
+    const host = (testStreamTask as any)._origin || testStreamTask
+    const taskInfo = testStreamTask.run() as TaskPromise<ReadableStream>
+    const aborter = taskInfo.task!
+    const id = aborter.id
+
+    const stream = await taskInfo
+    const reader = stream.getReader()
+    await reader.read()
+    await reader.cancel('client disconnected')
+    await sleep(10)
+
+    // 消费者取消流后，任务应从任务池注销
+    expect((host.__task_aborter as any)[id]).toBeUndefined()
+    expect(aborter.signal.aborted).toBeFalsy()
+    })
+
+    it('should not leave ghost pool entries when concurrent tasks share one ctx aborter (方案2 regression)', async () => {
+    class GhostTool extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any) => {
+          await sleep(20)
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(GhostTool, {asyncFeatures: AsyncFeatures.MultiTask})
+    const tool = new GhostTool('ghostTool')
+    const host = (tool as any)._origin || tool
+    const runner = tool.with({})
+
+    const p1 = runner.run('a') as TaskPromise
+    const p2 = runner.run('b') as TaskPromise
+    // 共享灯语义保留：并发任务仍然共享同一个 ctx.aborter（方案2 不做派生）
+    expect(p1.task).toBe(p2.task)
+
+    await Promise.allSettled([p1, p2])
+    await sleep(10)
+
+    // 修复前：aborter.id 被覆盖 → 先完成的任务清错槽位 → 残留 1 个幽灵条目
+    expect((tool as any).getRunningTaskCount()).toBe(0)
+    expect(Object.keys(host.__task_aborter).filter(k => host.__task_aborter[k])).toHaveLength(0)
+    })
+
+    it('should not leave ghost pool entries when sharing an internal TaskAbortController across concurrent tasks (方案2 regression)', async () => {
+    class GhostParamTool extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any) => {
+          await sleep(20)
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(GhostParamTool, {asyncFeatures: AsyncFeatures.MultiTask})
+    const tool = new GhostParamTool('ghostParam')
+    const host = (tool as any)._origin || tool
+    const shared = new TaskAbortController(tool as any)
+
+    const p1 = tool.run({aborter: shared}) as TaskPromise
+    const p2 = tool.run({aborter: shared}) as TaskPromise
+    await Promise.allSettled([p1, p2])
+    await sleep(10)
+
+    expect((tool as any).getRunningTaskCount()).toBe(0)
+    expect(Object.keys(host.__task_aborter).filter(k => host.__task_aborter[k])).toHaveLength(0)
+    })
+
+    it('should error all streams when concurrent stream tasks share one aborter (方案2 regression)', async () => {
+    class StreamShareTool extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any) => {
+          return getStream()
+        })
+      }
+    }
+    makeToolFuncCancelable(StreamShareTool, {asyncFeatures: AsyncFeatures.MultiTask})
+    const tool = new StreamShareTool('streamShare')
+    const runner = tool.with({})
+
+    const p1 = runner.run() as TaskPromise<ReadableStream>
+    const p2 = runner.run() as TaskPromise<ReadableStream>
+    const s1 = await p1
+    const s2 = await p2
+    const r1 = s1.getReader()
+    const r2 = s2.getReader()
+
+    // 先各读一个 chunk：证明两个 transform 的 onStart 都已注册 controller（消除时序抖动）
+    expect((await r1.read()).value).toHaveProperty('content', 'a')
+    expect((await r2.read()).value).toHaveProperty('content', 'a')
+
+    // 修复前：streamController 单值被后注册者覆盖 → 只有一个流被 error
+    runner.ctx!.aborter!.abort('shared stream abort')
+
+    await expect(r1.read()).rejects.toThrow(/shared stream abort/)
+    await expect(r2.read()).rejects.toThrow(/shared stream abort/)
+    })
+
+    it('should target the right pool slot when a shared aborter group times out (方案2 regression)', async () => {
+    class TimeoutShareTool extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any, aborter: TaskAbortController) => {
+          const end = Date.now() + (params?.waitTime ?? 100)
+          while (Date.now() < end) {
+            aborter.throwIfAborted()
+            await sleep(1)
+          }
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(TimeoutShareTool, {asyncFeatures: AsyncFeatures.MultiTask})
+    const tool = new TimeoutShareTool('timeoutShare')
+    const host = (tool as any)._origin || tool
+    const runner = tool.with({})
+
+    const p1 = runner.run({waitTime: 500, timeout: 40}) as TaskPromise
+    const p2 = runner.run({waitTime: 500}) as TaskPromise
+
+    // 组级 deadline + 共享 signal：T1 超时 → 整组中止
+    await expect(p1).rejects.toThrow(/timeout/)
+    await expect(p2).rejects.toThrow(/timeout/)
+    await sleep(10)
+
+    // 超时回调必须用闭包捕获的 taskId 清对槽位（修复前读被覆盖的 aborter.id → 残留幽灵条目）
+    expect((tool as any).getRunningTaskCount()).toBe(0)
+    expect(Object.keys(host.__task_aborter).filter(k => host.__task_aborter[k])).toHaveLength(0)
+    })
+
+    it('should clear the group timeout when the last started task ends, leaving queued siblings unprotected (refcount boundary)', async () => {
+    class QueueDeadlineTool extends ToolFunc {
+      func(params: any) {
+        return this.runAsyncCancelableTask(params, async (params: any, aborter: TaskAbortController) => {
+          const end = Date.now() + (params?.waitTime ?? 100)
+          while (Date.now() < end) {
+            aborter.throwIfAborted()
+            await sleep(1)
+          }
+          return params
+        })
+      }
+    }
+    makeToolFuncCancelable(QueueDeadlineTool, {asyncFeatures: AsyncFeatures.MultiTask, maxTaskConcurrency: 1})
+    const tool = new QueueDeadlineTool('queueDeadline')
+    const host = (tool as any)._origin || tool
+    const runner = tool.with({})
+
+    // 场景：共享 runner ctx 的 aborter + 信号量容量 1。
+    // p1 先启动（无 timeout）；p2 排队中，其 createAborter 在提交时刻（t≈0）设置组定时器
+    // （timeout=200，set-once）。提交时刻引用计数只有 1（p1 已启动），p2 尚未运行不计入。
+    const p1 = runner.run({waitTime: 50}) as TaskPromise
+    const p2 = runner.run({waitTime: 400, timeout: 200}) as TaskPromise
+
+    await expect(p1).resolves.toMatchObject({waitTime: 50})
+
+    // 边界：最后一个“已启动”的任务（p1）结束时引用计数归零 → 组定时器被清理。
+    // 若计数改为“含排队任务”，此处 timeoutId 应仍存在（回归信号）。
+    expect((runner as any).ctx.aborter.timeoutId).toBeUndefined()
+
+    // p2 随后启动（≈t=50ms），不再受组 deadline 约束：即便运行超过提交时刻+200ms
+    // 也不会被超时中止（修复前定时器若未被清理，p2 会在 t=200 被 /timeout/ 中止）。
+    await expect(p2).resolves.toMatchObject({waitTime: 400})
+    expect(p2.task!.signal.aborted).toBeFalsy()
+
+    // 池与信号量均干净
+    expect((tool as any).getRunningTaskCount()).toBe(0)
+    expect(Object.keys(host.__task_aborter).filter(k => host.__task_aborter[k])).toHaveLength(0)
     })
     });

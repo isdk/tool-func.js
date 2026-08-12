@@ -155,7 +155,11 @@ describe('createCallbacksTransformer', () => {
   // 7. 优化验证：确保在没有 onTransform 时，不向 TransformStream 传递 transform 钩子
   it('should optimize performance by not defining transform hook when onTransform is missing', () => {
     const originalTransformStream = global.TransformStream;
-    const transformStreamSpy = jest.fn((transformer) => new originalTransformStream(transformer));
+    // 注意：vitest 的 vi.fn() 不接受箭头函数实现作为构造函数（new 会抛 TypeError），
+    // 必须使用普通 function 实现。
+    const transformStreamSpy = jest.fn(function (this: unknown, transformer: any) {
+      return new (originalTransformStream as any)(transformer);
+    });
     
     // 使用 vitest 模拟全局构造函数
     vi.stubGlobal('TransformStream', transformStreamSpy);

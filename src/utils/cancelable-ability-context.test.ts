@@ -1,4 +1,4 @@
-import { vi as jest } from 'vitest'
+import { beforeEach, describe, expect, it, vi as jest } from 'vitest'
 import { ToolFunc } from '../tool-func'
 import { makeToolFuncCancelable, TaskAbortController, TaskPromise } from './cancelable-ability'
 import { AsyncFeatures } from './async-features'
@@ -389,5 +389,75 @@ describe('CancelableAbility Context Support', () => {
     expect(subAborter.signal.aborted).toBe(true)
 
     ToolFunc.unregister('subAborterReuse')
+  })
+
+  it('should not let an inner runAs task re-arm the shared timeout (set-once across nesting)', async () => {
+    const subTool = new TestCtxTool('nestedTimeoutSub')
+    subTool.register()
+
+    class NestedTimeoutTool extends ToolFunc {
+      func() {
+        return this.runAsyncCancelableTask({}, async () => {
+          // 内层显式传更短的 timeout=50：若允许 re-arm，内层会在 50ms 抢先触发；
+          // set-once 则忽略内层，保持外层 100ms deadline
+          return this.runAs('nestedTimeoutSub', { waitTime: 300, timeout: 50 })
+        })
+      }
+    }
+    makeToolFuncCancelable(NestedTimeoutTool)
+    const mainTool = new NestedTimeoutTool({ name: 'nestedTimeoutMain' })
+    mainTool.depends = { subTool }
+    mainTool.register()
+
+    // 外层 ctx.timeout=100 → 组定时器 100ms（set-once，内层 50 不得重置）
+    let err: any
+    const start = Date.now()
+    try {
+      await mainTool.with({ timeout: 100 }).run()
+    } catch (e) {
+      err = e
+    }
+
+    expect(err).toBeInstanceOf(AbortError)
+    // 击杀者必须是外层的 100ms（若内层 50ms 重置了定时器，data.timeout 会是 50）
+    expect(err.data).toMatchObject({ what: 'timeout', timeout: 100 })
+    // 且应在 ~100ms 被杀（而非内层 50ms 抢先）
+    expect(Date.now() - start).toBeGreaterThanOrEqual(80)
+
+    ToolFunc.unregister('nestedTimeoutSub')
+    ToolFunc.unregister('nestedTimeoutMain')
+  })
+
+  it('should not clear the outer timeout when an inner task finishes first (refcount across nesting)', async () => {
+    const subTool = new TestCtxTool('nestedRefcountSub')
+    subTool.register()
+
+    class NestedRefcountTool extends ToolFunc {
+      func() {
+        return this.runAsyncCancelableTask({}, async (_params, aborter: TaskAbortController) => {
+          // 内层 60ms 结束；外层继续运行 120ms（远超 100ms deadline）
+          await this.runAs('nestedRefcountSub', { waitTime: 60 })
+          const end = Date.now() + 120
+          while (Date.now() < end) {
+            aborter.throwIfAborted()
+            await sleep(1)
+          }
+          return 'done'
+        })
+      }
+    }
+    makeToolFuncCancelable(NestedRefcountTool)
+    const mainTool = new NestedRefcountTool({ name: 'nestedRefcountMain' })
+    mainTool.depends = { subTool }
+    mainTool.register()
+
+    // 内层先结束时引用计数 2→1，定时器不得被提前清理
+    const start = Date.now()
+    await expect(mainTool.with({ timeout: 100 }).run()).rejects.toThrow(/timeout/)
+    // 外层应在 ~100ms deadline 被击杀，而非等自己的 tail 跑满（60+120=180ms）
+    expect(Date.now() - start).toBeLessThan(160)
+
+    ToolFunc.unregister('nestedRefcountSub')
+    ToolFunc.unregister('nestedRefcountMain')
   })
 })
