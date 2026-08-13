@@ -167,6 +167,88 @@ describe('ToolFunc Registration & Reference Counting', () => {
     expect(ToolFunc.get('b')).toBeUndefined()
   })
 
+  it('should honor the internal _stack passed via options (back-edge detection)', () => {
+    const dep = new ToolFunc({ name: 'stackDep', func: () => 'dep' })
+    // Simulate a recursive registration where 'stackDep' is already in the call stack
+    const result = ToolFunc.register(dep, { _stack: new Set(['stackDep']) } as any)
+    expect(result).toBe(false) // Back-edge: ignored, no re-entry
+    expect(ToolFunc.get('stackDep')).toBeUndefined()
+    expect(getRefCount('stackDep')).toBeUndefined()
+  })
+
+  it('should honor the internal _stack carried in the first-arg config object', () => {
+    // The stack may arrive inside the 1st-arg object (not only in the 2nd-arg options),
+    // and must still be extracted before normalization/instance construction.
+    const stack = new Set(['stackArg1'])
+    const arg = { name: 'stackArg1', func: () => 'x', _stack: stack } as any
+    const result = ToolFunc.register(arg)
+    expect(result).toBe(false) // Back-edge: ignored, no re-entry
+    expect(ToolFunc.get('stackArg1')).toBeUndefined()
+    expect(getRefCount('stackArg1')).toBeUndefined()
+    // The caller's first-arg object must stay untouched (normalization copies it)
+    expect(arg._stack).toBe(stack)
+
+    // A non-back-edge stack in the 1st-arg object must not leak onto the instance either
+    ToolFunc.register({ name: 'stackArg1', func: () => 'x', _stack: new Set() } as any)
+    const inst = ToolFunc.get('stackArg1')!
+    expect(inst.func!()).toBe('x')
+    expect((inst as any)._stack).toBeUndefined()
+    expect(getRefCount('stackArg1')).toBe(1)
+  })
+
+  it('should strip a _stack passed to direct construction (no leak onto the instance)', () => {
+    // register() is not involved here: the constructor must still consume the
+    // internal stack so it never becomes instance state.
+    const stack = new Set(['ctorDirect'])
+    const arg = { name: 'ctorDirect', func: () => 'c', _stack: stack } as any
+    const inst = new ToolFunc(arg)
+    expect(inst.func!()).toBe('c')
+    expect((inst as any)._stack).toBeUndefined()
+    // The caller's construction object must stay untouched too
+    expect(arg._stack).toBe(stack)
+  })
+
+  it('should not mutate a caller-provided options object when extracting _stack', () => {
+    const stack = new Set()
+    const opts = { title: 'Keep', _stack: stack } as any
+    const dep = new ToolFunc({ name: 'stackNoMut', func: () => 'd' })
+
+    ToolFunc.register(dep, opts)
+
+    // The caller's object must stay untouched: extraction works on the normalized copy.
+    expect(opts._stack).toBe(stack)
+    expect(opts.title).toBe('Keep')
+    expect(ToolFunc.get('stackNoMut')).toBe(dep)
+    expect(dep.title).toBe('Keep')
+    expect((dep as any)._stack).toBeUndefined()
+  })
+
+  it('should consume options._stack without leaking it onto the instance', () => {
+    ToolFunc.register('stackDep2', { func: '() => 1', _stack: new Set() } as any)
+    const inst = ToolFunc.get('stackDep2')!
+    expect(inst.func!()).toBe(1)
+    expect((inst as any)._stack).toBeUndefined()
+  })
+
+  it('should merge other options alongside the internal _stack', () => {
+    const dep = new ToolFunc({ name: 'stackMix', func: () => 'dep' })
+    const r = ToolFunc.register(dep, { title: 'Mixed', _stack: new Set() } as any)
+    expect(r).toBe(dep)
+    expect(ToolFunc.get('stackMix')).toBe(dep)
+    expect(dep.title).toBe('Mixed')
+    expect((dep as any)._stack).toBeUndefined()
+    expect(getRefCount('stackMix')).toBe(1)
+  })
+
+  it('should register dependencies declared in the 3-arg config (name, funcString, config)', () => {
+    const dep = new ToolFunc({ name: 'depCfg', func: () => 'dep' })
+    ToolFunc.register('mainCfg', '() => "main"', { depends: { d: dep } })
+    expect(ToolFunc.get('mainCfg')).toBeDefined()
+    expect(ToolFunc.get('depCfg')).toBeDefined()
+    expect(getRefCount('depCfg')).toBe(1)
+    expect(ToolFunc.runSync('mainCfg')).toBe('main')
+  })
+
   it('should unregister via alias', () => {
     ToolFunc.register({ name: 'test', alias: 'myAlias', func: () => 'val' })
     expect(getRefCount('test')).toBe(1)

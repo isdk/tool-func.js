@@ -318,14 +318,15 @@ describe('CancelableAbility', () => {
     expect(typeof task.id).toBe('number')
     const stream = (await taskInfo)
     const reader = stream.getReader()
-    let chunk = await reader.read()
+    // 先读一个 chunk 确保 transform 的 onStart 已注册 controller（消除时序抖动）
+    await reader.read()
     let error:any
 
     const data = {a:1}
     task.abort('test', data)
     await expect(reader.read()).rejects.toThrow(AbortError)
     try {
-      chunk = await reader.read()
+      await reader.read()
     } catch (err) {
       error = err
     }

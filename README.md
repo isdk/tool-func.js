@@ -138,6 +138,22 @@ When you register a tool with `depends`, the framework automatically handles the
 
 This ensures that as long as at least one parent tool is active, its required child tools will not be accidentally unloaded.
 
+> **🔧 Internal Convention: Circular Dependency Detection via `options._stack` (Plugin Developers)**
+>
+> When a tool declares `depends`, registration recurses into each dependency. To terminate
+> circular chains (A → B → A), the framework threads an internal **stack** — a `Set` of the
+> ancestor names currently being registered — through the recursive `register` calls:
+>
+> - **Carrying**: the stack is passed as `options._stack` (it may sit either in the first-arg
+>   config object or in the second-arg options). It is **consumed and removed** during
+>   normalization (see `_extractStack`), so it never becomes instance state and is never
+>   serialized.
+> - **Back-edge behavior**: if a name is already in the stack, `register` returns `false` —
+>   the tool is already being registered in the current call chain, so re-entry is skipped.
+> - **If you override `register()` / `_acquireDependencies()`**: keep threading the stack via
+>   `{ _stack: stack }` in the options object — do not add a third parameter. Only the wrapper
+>   object is consumed; the `Set` itself passes through recursion unchanged.
+
 #### 3. Implementation Overriding
 
 If you need to dynamically update the logic of an already registered tool (e.g., for hot-reloading or plugin replacement), use the `allowOverride` option:
@@ -657,7 +673,28 @@ The system automatically recognizes the following patterns:
   - The second argument fills in missing properties recursively.
   - `const tool = new ToolFunc({ name: 'task', title: 'Main' }, { title: 'Fallback' }); // title will be 'Main'`
 
-#### 3. Deep Merging Benefits
+- **`(string, funcString)`**:
+  - The first argument is the fixed `name`, the second is the implementation as a **function-expression string**.
+  - `ToolFunc.register('add', '(a, b) => a + b');`
+
+- **`(string, funcString, config)`**:
+  - Same as above, plus an optional third **config object** describing `params`, `description`, `title`, etc. Works the same way for the constructor:
+  - `ToolFunc.register('add', '(a, b) => a + b', { params: [{ name: 'a' }, { name: 'b' }], description: 'Adds two numbers' });`
+  - `const add = new ToolFunc('add', '(a, b) => a + b', { params: [{ name: 'a' }, { name: 'b' }], description: 'Adds two numbers' });`
+
+#### 3. String Functions
+
+A `func` can be provided as a string and is compiled at construction/registration time. This is especially useful when loading tool definitions from persisted data (the framework itself exports `func` as a string when serializing a tool).
+
+- **Accepted formats** — the string must be a **function expression**: an arrow expression (`'(a, b) => a + b'`), a function expression (`'function(a, b) { return a + b }'`), or a named function expression (`'function greet(name) { return name; }'`).
+- **Bare expressions are rejected** — a string like `'a + b'` evaluates to a value instead of a function, so it throws a clear error. Use an arrow form instead.
+- **Calling convention** — a string func like `'(a, b) => ...'` is positional, so declare `params` as an array (`[{ name: 'a' }, { name: 'b' }]`) to use `run`/`runSync` with named params, or call it with `runWithPos`/`runWithPosSync`.
+- **Name derivation** — when no `name` is configured, the name is derived from a named function expression (e.g. `'function add(a, b) {...}'` → `add`).
+- **Scope** — the `scope` option provides closure variables: `new ToolFunc({ name: 't', scope: { secret: 42 }, func: '() => secret' })`.
+
+> **⚠️ Security note:** string funcs are compiled with `new Function`, i.e. arbitrary code execution. Only register strings from trusted sources (e.g. your own persisted data).
+
+#### 4. Deep Merging Benefits
 
 Because it uses `defaultsDeep`, you can provide partial defaults for nested structures like `params`, `depends`, or `result` schemas.
 

@@ -321,7 +321,7 @@ describe('ToolFunc Execution Context', () => {
       const spy = vi.spyOn(tool as any, '_shouldIsolate');
       
       // Explicitly passing isolated: false should have highest priority
-      const result = tool.runSync({}, { val: 1, isolated: false });
+      tool.runSync({}, { val: 1, isolated: false });
       expect(spy).toReturnWith(false);
       // Since it's not isolated, 'this' in func would be the tool itself, 
       // but runSync applies the ctx to the runner it creates. 
@@ -384,7 +384,7 @@ describe('ToolFunc Execution Context', () => {
       });
       
       const runner = tool.with({ val: 'bound' });
-      const fn = runner.getFunc();
+      const fn = runner.getFunc()!;
       
       expect(await fn({})).toBe('bound');
     });

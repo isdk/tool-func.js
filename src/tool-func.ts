@@ -108,6 +108,21 @@ export interface FuncParams {
 export type TFunc = (this:ToolFunc, ...params:any[]) => any
 
 /**
+ * The implementation of a tool function as a string.
+ *
+ * The string must be a **function expression** (e.g. `'(a, b) => a + b'`,
+ * `'function(a, b) { return a + b }'`, or `'function named(a) { return a }'`).
+ * It is compiled at construction/registration time via `_createFunction`,
+ * which wraps the string as `Function(scopeKeys, 'return ' + expr)`.
+ * Bare expressions (e.g. `'a + b'`) evaluate to a value instead of a function
+ * and are rejected with a clear error.
+ *
+ * Security note: string funcs are compiled with `new Function`, so only pass
+ * strings from trusted sources (e.g. your own persisted data).
+ */
+export type TFuncString = string
+
+/**
  * Base configuration for defining a tool function.
  * @interface
  */
@@ -227,9 +242,11 @@ export interface BaseFuncItem {
 export interface FuncItem extends BaseFuncItem {
   /**
    * The implementation of the tool function.
-   * @type {TFunc}
+   * Can be a real function, or a function-expression string (e.g. `'(a, b) => a + b'`)
+   * that will be compiled at construction time.
+   * @type {TFunc | TFuncString}
    */
-  func?: TFunc;
+  func?: TFunc | TFuncString;
 }
 
 /**
@@ -648,7 +665,7 @@ export class ToolFunc extends AdvancePropertyManager {
    * @param {string} name - The name of the function.
    * @returns {Function | undefined} A bound function reference, or `undefined` if not found.
    */
-  static getFunc(name: string) {
+  static getFunc(name: string): Function | undefined {
     const func = this.get(name)
     return func?.getFunc()
   }
@@ -729,12 +746,22 @@ export class ToolFunc extends AdvancePropertyManager {
       result = {};
     }
 
-    if (options && typeof options === 'object' && options !== name && options !== result) {
+    if (typeof options === 'string') {
+      // The 2nd arg is a function-expression string, e.g. register('add', '(a, b) => a + b').
+      // First-arg priority is preserved: func is only filled if not already present.
+      defaultsDeep(result, { func: options });
+    } else if (options && typeof options === 'object' && options !== name && options !== result) {
       defaultsDeep(result, options);
     }
 
-    if (!result.name && typeof result.func === 'function' && (result.func as any).name) {
-      result.name = (result.func as any).name;
+    if (!result.name) {
+      if (typeof result.func === 'function' && (result.func as any).name) {
+        result.name = (result.func as any).name;
+      } else if (typeof result.func === 'string') {
+        // Derive the name from a named function expression, e.g. 'function add(a, b) {...}'.
+        const m = (result.func as string).match(/^\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/);
+        if (m) { result.name = m[1]; }
+      }
     }
 
     return result;
@@ -813,6 +840,27 @@ export class ToolFunc extends AdvancePropertyManager {
   }
 
   /**
+   * Consumes the internal cycle-detection stack from a normalized options object.
+   *
+   * The stack (a `Set`) is a registration-call-scoped value carried internally via the
+   * '_stack' property (used by recursive dependency registration). It is extracted and
+   * removed so it never reaches instance state or serialization.
+   *
+   * @param {any} options - The normalized options object (may be a ToolFunc instance).
+   * @returns {Set<string> | undefined} The extracted stack, if any.
+   * @protected
+   * @internal
+   */
+  protected static _extractStack(options: any): Set<string> | undefined {
+    if (options && typeof options === 'object' && options._stack instanceof Set) {
+      const stack: Set<string> = options._stack;
+      delete options._stack;
+      return stack;
+    }
+    return undefined;
+  }
+
+  /**
    * Normalizes the arguments passed to the `register` method into a unified `RegisterOptions` object.
    *
    * @param {ToolFunc | string | Function | RegisterOptions} name - The primary identification or implementation.
@@ -846,8 +894,12 @@ export class ToolFunc extends AdvancePropertyManager {
    * and enable clean group unregistration.
    *
    * @param {ToolFunc|string|Function|RegisterOptions} name - The tool instance, function, or name to register.
-   * @param {RegisterOptions|ToolFunc} options - Configuration or implementation for the tool.
-   * @param {Set<string>} [_stack] - @internal Used for cycle detection during recursive registration.
+   * @param {RegisterOptions|ToolFunc|TFuncString} [options] - Configuration or implementation for the tool.
+   *   The internal cycle-detection stack (a `Set`) may also be carried as `_stack` — either in this
+   *   options argument or in the first-arg config object (used by recursive dependency registration);
+   *   it is consumed and removed during normalization, never reaching the instance.
+   *   With the `(name, funcString, config)` form, an optional third `config` argument is accepted
+   *   that provides params/metadata defaults for the function-expression string.
    * @returns {ToolFunc | false} The registered ToolFunc instance on success (creation, shadowing, or override),
    * or `false` if registration was ignored (e.g., ref-count increment only).
    *
@@ -856,19 +908,45 @@ export class ToolFunc extends AdvancePropertyManager {
    * ToolFunc.register('add', { func: (a, b) => a + b });
    *
    * // 2. Registering with shadowing permission in an isolated registry
-   * MyPluginTools.register('calc', { func: () => 2 }, { allowOverride: true });
+   * MyPluginTools.register('calc', { func: () => 2, allowOverride: true });
    *
    * // 3. Registering an existing ToolFunc instance
    * const tool = new ToolFunc({ name: 'my-tool', func: () => 'ok' });
    * ToolFunc.register(tool);
    *
+   * // 4. Registering from a function-expression string (compiled at registration time)
+   * ToolFunc.register('add', '(a, b) => a + b');
+   *
+   * // 5. Same, with an optional config object describing params and metadata
+   * ToolFunc.register('add', '(a, b) => a + b', { params: [{ name: 'a' }, { name: 'b' }], description: 'Adds two numbers' });
+   *
+   * // 6. Registering a named function expression without an explicit name
+   * ToolFunc.register({ func: 'function greet(name) { return `Hi ${name}`; }' });
+   *
    * @throws {Error} If name is missing, or if an alias collision occurs without permission.
    */
   static register(name: string, options: RegisterOptions): boolean|ToolFunc
   static register(func: Function, options: RegisterOptions): boolean|ToolFunc
-  static register(name: string|ToolFunc|Function|RegisterOptions, options?: RegisterOptions, /** @internal */ _stack?: Set<string>): boolean|ToolFunc
-  static register(name: ToolFunc|string|Function|RegisterOptions, options: RegisterOptions|ToolFunc = {} as any, _stack?: Set<string>) {
+  static register(name: string, func: TFuncString, options?: RegisterOptions): boolean|ToolFunc
+  static register(name: string|ToolFunc|Function|RegisterOptions, options?: RegisterOptions): boolean|ToolFunc
+  static register(name: ToolFunc|string|Function|RegisterOptions, options: RegisterOptions|ToolFunc|TFuncString = {} as any, config?: RegisterOptions) {
+    // Support: register(name, funcString, config?)
+    // The optional 3rd arg is only meaningful with the (name, funcString, config) form.
+    if (typeof options === 'string') {
+      // defaultsDeep: the func string wins; config only fills missing metadata.
+      options = config ? defaultsDeep({ func: options }, config) : { func: options };
+    }
     options = this._normalizeRegisterArguments(name, options as RegisterOptions);
+
+    // The cycle-detection stack is carried internally via the '_stack' property
+    // (used by recursive dependency registration). It may arrive either in the
+    // first-arg config object or in the second-arg options, so it is extracted
+    // from the NORMALIZED result — catching both positions — and removed before
+    // it can reach the constructed instance. Extracting after normalization also
+    // avoids mutating a caller-provided options object: for object first-args the
+    // normalized result is a fresh copy, so the caller's original is untouched.
+    const _stack = this._extractStack(options);
+
     const override = (options as any).override;
     if (options.hasOwnProperty('override')) { delete (options as any).override; }
 
@@ -1080,7 +1158,7 @@ export class ToolFunc extends AdvancePropertyManager {
     if (depends) {
       for (const dep of Object.values(depends)) {
         if (dep instanceof ToolFunc) {
-          this.register(dep, undefined, stack)
+          this.register(dep, stack ? ({ _stack: stack } as any) : undefined)
         }
       }
     }
@@ -1103,11 +1181,27 @@ export class ToolFunc extends AdvancePropertyManager {
    *
    * @param {string | Function | FuncItem} name - Can be a function name, a function implementation, or a configuration object.
    * @param {FuncItem | any} [options={}] - Configuration options if not provided in the first argument.
+   *   Can also be a function-expression string (e.g. `'(a, b) => a + b'`) for the `(name, funcString)` form.
+   *   An internal `_stack` property (a `Set`, used for cycle detection during registration) is
+   *   consumed and removed here so it never becomes instance state.
+   * @param {FuncItem | any} [config] - Optional config object, only used with the `(name, funcString, config)` form.
    */
-  constructor(name: string|Function|FuncItem, options: FuncItem|any = {}) {
+  constructor(name: string|Function|FuncItem, options: FuncItem|any = {}, config?: FuncItem|any) {
     super()
 
+    // Support: new ToolFunc(name, funcString, config?)
+    // Same normalization as register: the 2nd arg can be a function-expression string,
+    // with an optional 3rd config object describing params and metadata.
+    if (typeof options === 'string') {
+      // defaultsDeep: the func string wins; config only fills missing metadata.
+      options = config ? defaultsDeep({ func: options }, config) : { func: options };
+    }
     options = (this.constructor as typeof ToolFunc)._normalizeArguments(name, options);
+
+    // Defensive strip: the internal cycle-detection stack must never become instance
+    // state. register() consumes it before construction; this catches direct
+    // construction (e.g. new ToolFunc({ _stack })) where register is not involved.
+    (this.constructor as typeof ToolFunc)._extractStack(options);
 
     this.name = options.name as string
     /**
@@ -1361,8 +1455,8 @@ export class ToolFunc extends AdvancePropertyManager {
    * @param {string} [name] - Optional name of the function to retrieve.
    * @returns {Function | undefined} A function reference or `undefined` if not found.
    */
-  getFunc(name?: string) {
-    const result = name ? (this.constructor as typeof ToolFunc).getFunc(name) : (params: any, ctx?: ToolFuncContext) => this.runSync(params, ctx)
+  getFunc(name?: string): Function | undefined {
+    const result: Function | undefined = name ? (this.constructor as typeof ToolFunc).getFunc(name) : (params: any, ctx?: ToolFuncContext) => this.runSync(params, ctx)
     return result
   }
 
@@ -1490,9 +1584,18 @@ export const ToolFuncSchema = {
       const isExported = options.isExported
       if (isExported) {
         result = valueType === 'function' ? value.toString() : value;
-      } else if (value) {
+      } else if (valueType === 'string' || value) {
         if (valueType !== 'string') {value = value.toString()}
-        result = _createFunction(value as string, dest.scope)
+        try {
+          result = _createFunction(value as string, dest.scope)
+        } catch (e) {
+          throwError(`failed to create the func of "${dest.name || 'unnamed'}" from the string: ${(e as Error).message}`)
+        }
+        if (typeof result !== 'function') {
+          // Only function expressions are supported (e.g. '(a, b) => a + b').
+          // Bare expressions like 'a + b' evaluate to a value instead.
+          throwError(`the func string of "${dest.name || 'unnamed'}" must be a function expression (e.g. "(a, b) => a + b"), but it evaluates to ${typeof result}`)
+        }
       }
       return result;
     },

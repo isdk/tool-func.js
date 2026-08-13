@@ -138,6 +138,18 @@ console.log(await ToolFunc.run('statefulTool'));
 
 这确保了只要还有一个父工具在运行，其依赖的子工具就不会被意外卸载。
 
+> **🔧 内部约定：通过 `options._stack` 进行循环依赖检测（插件开发者）**
+>
+> 当工具声明了 `depends` 时，注册过程会递归进入每个依赖。为了终止循环链（A → B → A），
+> 框架会在递归的 `register` 调用中传递一个内部**栈** —— 一个记录“当前正在注册的祖先名称”的 `Set`：
+>
+> - **传递方式**: 栈通过 `options._stack` 传递（可以放在第一参配置对象里，也可以放在第二参 options 中）。
+>   它会在归一化过程中被**消费并移除**（见 `_extractStack`），因此永远不会成为实例状态，也永远不会被序列化。
+> - **回边行为**: 如果某个名称已经在栈中，`register` 会返回 `false` ——
+>   表示该工具已在当前调用链中注册，跳过重复进入。
+> - **如果您重写 `register()` / `_acquireDependencies()`**: 请继续通过 options 对象中的 `{ _stack: stack }`
+>   传递栈 —— 不要新增第三个参数。被消费的只是包裹对象，`Set` 本身会原样穿透递归。
+
 #### 3. 实现覆盖 (Override)
 
 如果您需要动态更新一个已注册工具的逻辑（例如热更新或插件替换），可以使用 `allowOverride` 选项：
@@ -654,7 +666,28 @@ console.log(await ToolFunc.runWithPos('addNumbers', 5, 3)); // 使用 runWithPos
   - 第二个参数递归地填充缺失的属性。
   - `const tool = new ToolFunc({ name: 'task', title: '主标题' }, { title: '备用标题' }); // title 将是 '主标题'`
 
-#### 3. 深度合并的优势
+- **`(string, funcString)`**:
+  - 第一个参数是确定的 `name`，第二个参数是实现代码的**函数表达式字符串**。
+  - `ToolFunc.register('add', '(a, b) => a + b');`
+
+- **`(string, funcString, config)`**:
+  - 同上，外加可选的第三个**配置对象**，用于描述 `params`、`description`、`title` 等。构造函数同样支持此形式：
+  - `ToolFunc.register('add', '(a, b) => a + b', { params: [{ name: 'a' }, { name: 'b' }], description: '两个数相加' });`
+  - `const add = new ToolFunc('add', '(a, b) => a + b', { params: [{ name: 'a' }, { name: 'b' }], description: '两个数相加' });`
+
+#### 3. 字符串函数 (String Functions)
+
+`func` 可以以字符串形式提供，并在构造/注册时被编译。这在从持久化数据加载工具定义时尤其有用（框架在序列化工具时本身就会把 `func` 导出为字符串）。
+
+- **支持的格式** —— 字符串必须是**函数表达式**：箭头表达式（`'(a, b) => a + b'`）、函数表达式（`'function(a, b) { return a + b }'`）或具名函数表达式（`'function greet(name) { return name; }'`）。
+- **裸表达式会被拒绝** —— 像 `'a + b'` 这样的字符串会被求值为一个值而不是函数，因此会抛出清晰错误。请改用箭头形式。
+- **调用约定** —— 类似 `'(a, b) => ...'` 的字符串函数是位置参数风格，因此请将 `params` 声明为数组（`[{ name: 'a' }, { name: 'b' }]`）以便通过 `run`/`runSync` 使用具名参数，或直接用 `runWithPos`/`runWithPosSync` 调用。
+- **名字推导** —— 未配置 `name` 时，会从具名函数表达式推导名字（如 `'function add(a, b) {...}'` → `add`）。
+- **作用域** —— `scope` 选项提供闭包变量：`new ToolFunc({ name: 't', scope: { secret: 42 }, func: '() => secret' })`。
+
+> **⚠️ 安全提示:** 字符串函数通过 `new Function` 编译，即任意代码执行。请仅从受信任的来源（例如您自己持久化的数据）注册字符串。
+
+#### 4. 深度合并的优势
 
 由于使用了 `defaultsDeep`，您可以为 `params`、`depends` 或 `result` 模式等嵌套结构提供局部默认值。
 
