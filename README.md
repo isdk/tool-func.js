@@ -13,7 +13,8 @@ A powerful TypeScript framework for creating, managing, and executing modular to
 - **🧩 Execution Context & Concurrency Isolation:** Achieves concurrency safety with minimal memory overhead using prototype-chain-based "Shadow Instances". Safely access environmental data (like `traceId`, `signal`) via `this.ctx` and propagate context using the `tool.with(ctx)` chainable API.
 - **🔄 Async & Cancellable Tasks:** Transparently integrates cancellation capabilities via `makeToolFuncCancelable`. Automatically injects an `aborter` on every call, supports timeouts and `AbortSignal` linkage, and returns a `task` handle for external lifecycle control.
 - **🌊 Streaming Responses:** Easily create streaming outputs using the `stream` property. Process stream events seamlessly with `createCallbacksTransformer`, featuring unified cleanup hooks and zero-copy optimization.
-- **🚀 Lifecycle Hooks:** Use the `setup` method to execute one-time initialization logic and safely modify instance state.
+- **🚀 Lifecycle Hooks:** Install `makeToolFuncLifecycle` to turn the `setup` and `dispose` hook functions into a symmetric, registry-driven lifecycle
+  (terse API surface, with async setup, readiness gating, and explicit teardown).
 - **🧬 Flexible Argument Normalization:** Supports smart pattern recognition (strings, functions, objects) and deep merging during construction and registration to easily compose tool metadata.
 - **🔀 Dual-Mode Parameter Support:** Supports both semantically clear object parameters (`run`) and fixed-order positional parameters (`runWithPos`).
 - **🏷️ Aliases & Tags:** Assign multiple names (`alias`) or `tags` to functions for flexibility and grouping.
@@ -93,31 +94,71 @@ console.log(message); // "Hello, John Doe!"
 > **💡 Pro Tip: Local Dependency Aliasing**
 > In `runAsSync` or `runAs`, the framework prioritizes matching keys in the `depends` map (e.g., `userFetcher`). This allows you to define "local names" for dependencies that are only valid within the current tool, without polluting the global registry.
 
-### Lifecycle Hooks: The `setup` Method
+### Lifecycle Hooks: Full Lifecycle Lifecycle with `setup` and `dispose`
 
-The `setup` hook provides a way to run one-time initialization logic when a `ToolFunc` instance is created. This is useful for configuring the instance, setting up initial state, or modifying properties before the tool is registered or used. The `this` context inside `setup` refers to the `ToolFunc` instance itself.
+A plain `ToolFunc` stores the `setup` and `dispose` hook functions but **never calls them**; they
+are configuration fields. Install the lifecycle ability once on the registry class you actually use,
+`const Tools = makeToolFuncLifecycle(ToolFunc)`, and the hooks become a symmetric, registry-driven
+lifecycle:
+
+- **`register()`** runs `setup` (idempotently, once per registration lifetime, after the instance
+  is placed in the registry). It can mutate the options object it receives; the keys it touches are
+  replayed back onto the instance through the same `initialize`/`assign` pipeline.
+- **`dispose`** is the exact inverse — its teardown runs when the tool is physically removed (refCount
+  hits zero, or `force` is used). Because the synchronous `unregister()` cannot await it, its returned
+  promise is tracked and any rejection is logged; use **`unregisterAsync()`** to await it and observe
+  the real error.
+- **Re-arm**: a successful `dispose` re-arms `setup`, so an unregister/register cycle rebuilds whatever
+  teardown released. An instance with a `dispose` hook is therefore strictly paired: executing it before
+  `register()` is treated as a bug.
+- **Async setup**: if `setup` returns a promise, the instance becomes *pending*. `run()` / `runWithPos()`
+  await it automatically; `runSync()` / `runWithPosSync()` refuse to run and point at the async entry
+  points (`run()` / `await tool.ready`). The **static helpers** `registerAsync()`, `createAsync()`,
+  `awaitReady()`, and `whenAllReady()` await setup and (for the first two) the whole dependency tree.
+
+Instance-side surface on every registered tool: `ensureSetup()`/`ensureDispose()`,
+`isSetupDone()`/`isSetupPending()`, `registerAsync()`/`unregisterAsync()`, plus the `ready` and `disposed`
+promises. The **static surface**: `Tools.registerAsync(...)`, `Tools.unregisterAsync(...)`,
+`Tools.createAsync(...)`, `Tools.awaitReady(name)`, and `Tools.whenAllReady()`.
 
 ```typescript
-const statefulTool = new ToolFunc({
-  name: 'statefulTool',
-  customState: 'initial', // Define a custom property
+import { ToolFunc, makeToolFuncLifecycle } from '@isdk/tool-func';
+
+const Tools = makeToolFuncLifecycle(ToolFunc);
+
+const db = new Tools({
+  name: 'db',
   setup() {
-    // `this` is the statefulTool instance
-    console.log(`Setting up ${this.name}...`);
-    this.customState = 'configured';
-    this.initializedAt = new Date();
+    // runs at register() time, not in the constructor; this is still the instance
+    this.conn = connect();
+  },
+  dispose() {
+    this.conn.close();
   },
   func() {
-    return `State: ${this.customState}, Initialized: ${this.initializedAt.toISOString()}`;
-  }
+    return this.conn.query('select 1');
+  },
 });
 
-console.log(statefulTool.customState); // "configured"
+db.register();            // <- setup() runs here
+await Tools.run('db');    // setup has already completed by the time func runs
+db.unregister();          // <- dispose() runs here
 
-statefulTool.register();
-console.log(await ToolFunc.run('statefulTool'));
-// "State: configured, Initialized: ..."
+// Async setup: the instance is pending until setup settles.
+const slow = new Tools({
+  name: 'slow',
+  async setup() { this.readyAt = await Promise.resolve('now'); },
+  func() { return this.readyAt; },
+});
+// slow.runSync() would throw; use the async surface instead:
+await Tools.registerAsync(slow);       // waits for setup (and dependencies) to settle
+await Tools.whenAllReady();            // waits for every tool in the registry to be ready
+await Tools.createAsync({ name: 'temp', setup() { /* ... */ } });  // creates + sets up, without registering
 ```
+
+> **⚠️ A bare instance is a no-op for lifecycle.** `new ToolFunc({ setup(){...}, dispose(){...} })
+> .register()` does nothing with the hooks. If you need lifecycle, always construct from a registry
+> class that has been enhanced with `makeToolFuncLifecycle` (or a subclass of one).
 
 ### Registration Lifecycle & Reference Counting
 

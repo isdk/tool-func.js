@@ -420,27 +420,7 @@ describe('ToolFunc Execution Context', () => {
     });
   });
 
-  describe('Setup Hook', () => {
-    it('should call setup hook and allow modifying options before initialization', () => {
-      const tool = new ToolFunc({
-        name: 'setupTool',
-        title: 'Initial Title',
-        setup(options) {
-          // setup runs before initialize(options), so we can modify options
-          if (options) {
-            options.title = 'Configured Title';
-          }
-          (this as any).internalState = 'ready';
-        },
-        func: function() {
-          return `${this.title}-${(this as any).internalState}`;
-        }
-      });
-      // title should be 'Configured Title' because setup modified the options object
-      expect(tool.title).toBe('Configured Title');
-      expect(tool.runSync()).toBe('Configured Title-ready');
-    });
-
+  describe('Subclassing and Custom Properties', () => {
     it('should support custom properties via subclassing and defineProperties', () => {
       // Correct way to add managed properties using the subclass defined at top-level
       MySubTool.defineProperties(MySubTool, {

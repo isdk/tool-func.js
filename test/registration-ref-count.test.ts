@@ -490,21 +490,7 @@ describe('ToolFunc Registration & Reference Counting', () => {
     expect(getRefCount('parent')).toBeUndefined()
   })
 
-  it('should run setup() hook on the new instance during override', () => {
-    let setupCalled = 0
-    ToolFunc.register({ name: 'test', func: () => { } })
-
-    ToolFunc.register({
-      name: 'test',
-      setup() { setupCalled++ },
-      func: () => { },
-      allowOverride: true
-    })
-
-    expect(setupCalled).toBe(1)
-  })
-
-  it('should maintain DAG integrity when a middle node is replaced', () => {
+it('should maintain DAG integrity when a middle node is replaced', () => {
     // A -> B -> C
     const c = new ToolFunc({ name: 'c', func: () => 'c' })
     const b1 = new ToolFunc({ name: 'b', depends: { c }, func: () => 'b1' })

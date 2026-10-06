@@ -153,13 +153,28 @@ export interface BaseFuncItem {
    */
   tags?: string|string[];
   /**
-   * A lifecycle hook called once during the `ToolFunc` instance's initialization.
-   * It allows for initial setup, state configuration, or property modification on the instance
-   * before it is used or registered. The `this` context is the `ToolFunc` instance itself.
+   * A lifecycle hook called once when the `ToolFunc` instance is **registered**, and again after
+   * it has been `dispose`d and re-registered. It is the exact inverse of {@link BaseFuncItem.dispose}.
+   *
+   * It allows for initial setup, state configuration, or property modification on the instance.
+   * The `this` context is the `ToolFunc` instance itself.
+   *
+   * The hook may return a `Promise`. When it does, the instance is *pending* until that promise
+   * settles: `run()` awaits it automatically, while `runSync()` refuses to execute and asks you to
+   * use `run()` / `await tool.ready` instead. Use `registerAsync()` when you want registration
+   * itself to wait for setup to finish.
+   *
+   * NOTE: this hook is only *invoked* by the `makeToolFuncLifecycle` ability — a plain `ToolFunc`
+   * stores it but never calls it. Install it once, on the registry class you actually use:
+   * `const Tools = makeToolFuncLifecycle(ToolFunc)`.
+   *
+   * Mutating `options` inside the hook still works (including after an `await`): the touched keys
+   * are re-applied through the very same `initialize`/`assign` pipeline that built the instance.
    *
    * @param {FuncItem} [options] - The configuration options for the function.
    * @example
-   * const myFunc = new ToolFunc({
+   * const Tools = makeToolFuncLifecycle(ToolFunc);
+   * const myFunc = new Tools({
    *   name: 'myFunc',
    *   customState: 'initial',
    *   setup() {
@@ -167,9 +182,36 @@ export interface BaseFuncItem {
    *     this.customState = 'configured';
    *   }
    * });
+   * myFunc.register(); // <- setup runs here, not in the constructor
    * console.log(myFunc.customState); // Outputs: 'configured'
    */
-  setup?: (this: ToolFunc, options?: FuncItem) => void;
+  /**
+   * A lifecycle hook called once when the `ToolFunc` instance is **removed from the registry**,
+   * i.e. when the reference count drops to zero or when `unregister` is forced. It is the exact
+   * inverse of {@link BaseFuncItem.setup}: releasing whatever `setup` acquired (connections,
+   * logins, timers, subscriptions...).
+   *
+   * The hook may return a `Promise`. Because the synchronous `unregister()` cannot await it, the
+   * returned promise is tracked and its rejection is logged rather than thrown. Use
+   * `unregisterAsync()` to await the teardown and observe the real error.
+   *
+   * After a successful `dispose`, the instance is re-armed: registering it again re-runs `setup`.
+   *
+   * NOTE: like {@link BaseFuncItem.setup}, this hook is only invoked by the `makeToolFuncLifecycle`
+   * ability. Install it once, on the registry class you actually use:
+   * `const Tools = makeToolFuncLifecycle(ToolFunc)`.
+   *
+   * @example
+   * const Tools = makeToolFuncLifecycle(ToolFunc);
+   * const myFunc = new Tools({
+   *   name: 'myFunc',
+   *   setup() { this.conn = connect() },
+   *   dispose() { this.conn.close() },
+   *   func: () => 'ok',
+   * });
+   * myFunc.register();
+   * myFunc.unregister(); // <- dispose runs here
+   */
   /**
    * If true, indicates that this function should be treated as a server-side API.
    * @type {boolean}
@@ -378,14 +420,18 @@ function findRegistryOwner(target: any, name: string): any {
  * `ToolFunc` provides a robust framework for defining functions with rich metadata,
  * managing their lifecycle, and executing them through a centralized registry.
  * It is the core component for creating modular and discoverable tools.
- *
- * Key Features:
- * - **Rich Metadata**: Define functions with descriptions, parameters, tags, and titles, making them self-documenting.
- * - **Static Registry**: A global, static registry (`ToolFunc.items`) allows any part of an application to access and run registered functions by name.
- * - **Dependency Management**: Use the `depends` property to declare dependencies on other `ToolFunc`s, which are then auto-registered.
- * - **Aliasing**: Assign multiple names to a function for flexibility.
- * - **Lifecycle Hooks**: Use the `setup` method for one-time initialization logic when a `ToolFunc` instance is created.
- * - **Parameter Handling**: Automatically handles both positional and named parameters.
+ *   * Key Features:
+   * - **Rich Metadata**: Define functions with descriptions, parameters, tags, and titles, making them self-documenting.
+   * - **Static Registry**: A global, static registry (`ToolFunc.items`) allows any part of an application to access and run registered functions by name.
+   * - **Dependency Management**: Use the `depends` property to declare dependencies on other `ToolFunc`s, which are then auto-registered.
+   * - **Aliasing**: Assign multiple names to a function for flexibility.
+   * - **Lifecycle Hooks**: Use the `setup`/`dispose` pair when you install the `makeToolFuncLifecycle` ability.
+     They turn plain hook functions (stored but ignored by a bare `ToolFunc`) into a symmetric
+     lifecycle: `register()` runs `setup`, `dispose()` is the inverse teardown, an async `setup`
+     makes the instance *pending* (gated for `runSync` / `runWithPosSync`), and `dispose` re-arms
+     the hook so an unregister/register cycle rebuilds the acquired state.
+     @see makeToolFuncLifecycle @see LifecycleAbility @see LifecycleAbilityOptions
+   * - **Parameter Handling**: Automatically handles both positional and named parameters.
  *
  * @extends AdvancePropertyManager
  *
@@ -1224,9 +1270,12 @@ export class ToolFunc extends AdvancePropertyManager {
     //   throw new AlreadyExistsError(`Function ${name}`, ToolFunc.name)
     // }
     if (options.scope) {this.scope = options.scope}
-    if (typeof options.setup === 'function') {options.setup.call(this, options)}
 
     // initialize PropertyManager
+    // NOTE: `setup` is deliberately NOT invoked here. It is a *registration* time hook and is
+    // driven by the `makeToolFuncLifecycle` ability (see @src/utils/lifecycle-ability.ts), which
+    // also owns the `dispose` counterpart. Keeping it out of the constructor is what makes
+    // setup/dispose exact inverses across a re-registration cycle.
     this.initialize(options)
   }
 
@@ -1292,20 +1341,14 @@ export class ToolFunc extends AdvancePropertyManager {
    * Isolation creates a lightweight clone of the current tool to provide a unique `this.ctx`
    * for the duration of the call, preventing property collisions in concurrent environments.
    *
+   * When the `makeToolFuncLifecycle` ability has been installed, this gate also keeps `runSync`/
+   * `runWithPosSync` out of a tool that is still *pending* across stacks (async `setup` in flight)
+   * and refuses a strictly-paired tool (one with a `dispose` hook) that has not been `register()`ed.
+   *
    * @param {any} [params] - The runtime parameters for the function call.
    * @param {ToolFuncContext} [ctx] - The optional execution context provided by the user for this specific call (e.g., via `runSync(params, ctx)`).
    * @returns {boolean} `true` if a shadow instance should be created, otherwise `false`.
    * @protected
-   */
-  /**
-   * Determines if the function execution should be isolated into a "Shadow Instance".
-   *
-   * PRIORITY LOGIC:
-   * 1. Explicit 'ctx.isolated' in the current call (Highest).
-   * 2. Any explicit 'ctx' provided (Safe default: isolate to apply new overrides).
-   * 3. Prevention of recursion (If already an own 'ctx' property exists).
-   * 4. Inherited 'this.ctx.isolated' configuration.
-   * 5. Presence of any inherited context (Default: isolate for concurrency safety).
    */
   protected _shouldIsolate(params?: any, ctx?: ToolFuncContext): boolean {
     if (ctx?.isolated !== undefined) return ctx.isolated;
@@ -1380,7 +1423,11 @@ export class ToolFunc extends AdvancePropertyManager {
    * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
    */
   runAs(name:string, params?: any, ctx?: ToolFuncContext): Promise<any>|any {
-    return this.runAsSync(name, params, ctx)
+    const { func, context } = this._resolveAs(name, params, ctx)
+    // Goes through the target's *async* entry point on purpose: abilities layered on top of
+    // ToolFunc (e.g. `makeToolFuncLifecycle`) gate their async readiness on `run()`, so this is
+    // what makes a dependency's pending `setup` transparently awaited.
+    return func.run(params, context)
   }
 
   /**
@@ -1404,6 +1451,25 @@ export class ToolFunc extends AdvancePropertyManager {
    * @throws {NotFoundError} If the target function cannot be found in the current lineage.
    */
   runAsSync(name:string, params?: any, ctx?: ToolFuncContext) {
+    const { func, context } = this._resolveAs(name, params, ctx)
+    return func.runSync(params, context)
+  }
+
+  /**
+   * Resolves a dependency by name into the concrete instance and execution context to call.
+   *
+   * This is the shared resolution half of `runAs`/`runAsSync`: both need the same hierarchical
+   * lookup and the same binding strategy, they only differ in which entry point of the resolved
+   * tool they hand the call to (`run` vs `runSync`).
+   *
+   * @param {string} name - The name or alias of the target function.
+   * @param {any} [params] - Optional parameters to pass to the target function.
+   * @param {ToolFuncContext} [ctx] - The execution context.
+   * @returns {{ func: ToolFunc, context: ToolFuncContext }} The resolved instance and context.
+   * @throws {NotFoundError} If the target function cannot be found in the current lineage.
+   * @protected
+   */
+  protected _resolveAs(name: string, params?: any, ctx?: ToolFuncContext): { func: ToolFunc, context: ToolFuncContext } {
     // 1. Prepare context. Ensure it inherits control flags from current instance context.
     let context = this._prepareContext(params, ctx);
     const rootRegistry = context.rootRegistry || this.ctx?.rootRegistry || (this.constructor as typeof ToolFunc);
@@ -1443,7 +1509,7 @@ export class ToolFunc extends AdvancePropertyManager {
       }
     }
     if (func) {
-      return func.runSync(params, context)
+      return { func, context }
     }
     throw new NotFoundError(`${name} to run`, rootRegistry.name);
   }
@@ -1584,8 +1650,12 @@ export const ToolFuncSchema = {
       const isExported = options.isExported
       if (isExported) {
         result = valueType === 'function' ? value.toString() : value;
-      } else if (valueType === 'string' || value) {
-        if (valueType !== 'string') {value = value.toString()}
+      } else if (valueType === 'string') {
+        // Only string funcs are compiled (into the declared `scope`). Function
+        // values are assigned directly (result === value) to preserve closures
+        // and to support method-shorthand / arrow / function-expression syntax
+        // as-is, instead of recompiling via toString() (which breaks shorthand
+        // and discards the lexical closure).
         try {
           result = _createFunction(value as string, dest.scope)
         } catch (e) {

@@ -13,7 +13,8 @@
 - **🧩 执行上下文与并发隔离:** 利用原型链“影子实例”实现极低内存开销的并发安全。通过 `this.ctx` 安全访问环境数据（如 traceId、signal），支持 `tool.with(ctx)` 链式 API 传递上下文。
 - **🔄 异步与可取消任务:** 通过 `makeToolFuncCancelable` 透明集成中止能力。每次调用自动注入 `aborter`，支持超时、AbortSignal 联动，并返回 `task` 句柄供外部控制生命周期。
 - **🌊 流式响应:** 使用 `stream` 属性轻松创建流式输出。配合 `createCallbacksTransformer` 处理流事件，享受统一清理钩子与零拷贝优化。
-- **🚀 生命周期钩子:** 使用 `setup` 方法执行一次性初始化逻辑，安全修改实例状态。
+- **🚀 生命周期钩子:** 安装 `makeToolFuncLifecycle` 后，`setup` 与 `dispose` 钩子函数会变成一个对称的、由注册表驱动的生命周期
+  （接口面比较紧，支持异步 setup、就绪门禁与显式 teardown）。
 - **🧬 灵活的参数归一化:** 构造与注册时支持智能模式识别（字符串、函数、对象）与深度合并，轻松组合工具元数据。
 - **🔀 双模式参数支持:** 同时支持语义清晰的对象参数（`run`）与固定顺序的位置参数（`runWithPos`）。
 - **🏷️ 别名与标签:** 为函数分配多个名称 (`alias`) 或 `tags`，以实现灵活性和分组。
@@ -93,31 +94,71 @@ console.log(message); // 输出: "你好, 张三!"
 > **💡 提示：局部依赖别名**
 > 在 `runAsSync` 或 `runAs` 中，框架会优先匹配 `depends` 映射中的键名（如 `userFetcher`）。这允许您为依赖项定义仅在当前工具内部有效的“局部名称”，而不会污染全局注册表。
 
-### 生命周期钩子: `setup` 方法
+### 生命周期钩子: 完整的 setup / dispose 生命周期
 
-`setup` 钩子提供了一种在创建 `ToolFunc` 实例时运行一次性初始化逻辑的方法。这对于在工具被注册或使用之前配置实例、设置初始状态或修改属性非常有用。`setup` 内部的 `this` 上下文指向 `ToolFunc` 实例本身。
+一个普通的 `ToolFunc` 会存放 `setup` 和 `dispose` 这两个钩子函数，但**不会调用它们**；它们只是配置字段。
+请在你实际使用的注册表类上安装一次生命周期能力 `const Tools = makeToolFuncLifecycle(ToolFunc)`，
+此时这两个钩子就变成了一个对称的、由注册表驱动的生命周期：
+
+- **`register()`** 会运行 `setup`（幂等的，每个注册生命周期仅运行一次，发生在实例被放入注册表之后）。
+  它可以修改收到的 options 对象；它所触碰的键会通过同一条 `initialize` / `assign` 流水线被回放到实例上。
+- **`dispose`** 是其准确逆操作：当工具被真正移除（引用计数归零，或使用了 `force`）时，它的清理逻辑会运行。
+  因为同步的 `unregister()` 无法等待它，返回的 Promise 会被追踪，拒绝异常会被记录而非抛出；
+  请使用 **`unregisterAsync()`** 来等待该清理并查看真实错误。
+- **重置（re-arm）**：一旦 `dispose` 成功，`setup` 会被重新准备好，所以一次 unregister / register 循环
+  会重建刚刚被 teardown 释放掉的状态。带有 `dispose` 钩子的实例是严格配对的：在调用 `register()` 之前就运行它，
+  会被当作一个错误。
+- **异步 setup**：如果 `setup` 返回了一个 Promise，该实例会进入 *pending* 状态。
+  `run()` / `runWithPos()` 会自动等待它；`runSync()` / `runWithPosSync()` 则会拒绝运行，
+  并指引你改用异步入口（`run()` / `await tool.ready`）。
+  **静态辅助方法** `registerAsync()`、`createAsync()`、`awaitReady()` 和 `whenAllReady()` 会等待 setup
+  （前两者还包括整个依赖树）。
+
+每个已注册工具上的**实例侧接口**：`ensureSetup()` / `ensureDispose()`、
+`isSetupDone()` / `isSetupPending()`、`registerAsync()` / `unregisterAsync()`，
+以及 `ready` 和 `disposed` 这两个 Promise。
+**静态侧接口**：`Tools.registerAsync(...)`、`Tools.unregisterAsync(...)`、
+`Tools.createAsync(...)`、`Tools.awaitReady(name)` 和 `Tools.whenAllReady()`。
 
 ```typescript
-const statefulTool = new ToolFunc({
-  name: 'statefulTool',
-  customState: 'initial', // 定义一个自定义属性
+import { ToolFunc, makeToolFuncLifecycle } from '@isdk/tool-func';
+
+const Tools = makeToolFuncLifecycle(ToolFunc);
+
+const db = new Tools({
+  name: 'db',
   setup() {
-    // `this` 是 statefulTool 实例
-    console.log(`正在设置 ${this.name}...`);
-    this.customState = 'configured';
-    this.initializedAt = new Date();
+    // 在 register() 时运行，而不是构造函数里；这里的 this 仍然是实例本身
+    this.conn = connect();
+  },
+  dispose() {
+    this.conn.close();
   },
   func() {
-    return `状态: ${this.customState}, 初始化于: ${this.initializedAt.toISOString()}`;
-  }
+    return this.conn.query('select 1');
+  },
 });
 
-console.log(statefulTool.customState); // 输出: "configured"
+db.register();             // <- 此时运行 setup()
+await Tools.run('db');     // 到 func 运行时，setup 已经完成了
+db.unregister();           // <- 此时运行 dispose()
 
-statefulTool.register();
-console.log(await ToolFunc.run('statefulTool'));
-// 输出: "状态: configured, 初始化于: ..."
+// 异步 setup：实例会保持 pending，直到 setup 落定。
+const slow = new Tools({
+  name: 'slow',
+  async setup() { this.readyAt = await Promise.resolve('now'); },
+  func() { return this.readyAt; },
+});
+// slow.runSync() 会抛出；请改用异步接口：
+await Tools.registerAsync(slow);        // 等待 setup（及依赖）落定
+await Tools.whenAllReady();             // 等待注册表里每个工具都就绪
+await Tools.createAsync({ name: 'temp', setup() { /* ... */ } });  // 创建并执行 setup，但不注册
 ```
+
+> **⚠️ 裸实例在生命周期上是无操作的。**
+> `new ToolFunc({ setup(){...}, dispose(){...} }).register()` 不会对钩子做任何处理。
+> 如果你需要生命周期，请始终从已用 `makeToolFuncLifecycle` 加强过的注册表类（
+> 或其子类）进行构造。
 
 ### 注册生命周期与引用计数
 
