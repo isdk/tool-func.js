@@ -23,12 +23,15 @@ interface LifecycleState {
   setupPromise?: Promise<any>
   /** The error thrown by the last `setup` invocation, if any. */
   setupError?: any
-  /** `dispose` has completed for the current registration lifetime. */
-  disposed: boolean
-  /** `dispose` has been invoked (guards against double teardown on repeated `unregister`). */
+  /** `dispose` has been invoked (guards against tearing the same lifetime down twice). */
   disposeStarted: boolean
   /** The (possibly already settled) promise of the last `dispose` invocation. */
   disposePromise?: Promise<any>
+  /**
+   * Settles once this instance's teardown is complete: its own `dispose` *and* the release of the
+   * dependencies it held. Set the moment the instance is physically removed from a registry layer.
+   */
+  teardownPromise?: Promise<any>
   /** The error thrown by the last `dispose` invocation, if any. */
   disposeError?: any
   /** Option keys written by `setup`; re-applied through `assign()` once setup settles. */
@@ -43,7 +46,6 @@ function getState(inst: any): LifecycleState {
     state = inst.__lifecycle = {
       done: false,
       pending: false,
-      disposed: false,
       disposeStarted: false,
       touched: new Set<string>(),
     }
@@ -118,9 +120,15 @@ function runSetup(inst: any): Promise<any> {
     return state.setupPromise || Promise.resolve(inst)
   }
   const setup = inst.setup
+  // A new registration lifetime starts here, so the teardown side is re-armed as well: `dispose`
+  // is the exact inverse of `setup`, and the next `unregister()` must release what this one
+  // acquires. (`disposeStarted` only guards against tearing the *same* lifetime down twice.)
+  state.disposeStarted = false
+  state.disposePromise = undefined
+  state.disposeError = undefined
+  state.teardownPromise = undefined
   // Mark first: a re-entrant `register()` from within `setup` must not recurse.
   state.done = true
-  state.disposed = false
   if (typeof setup !== 'function') {
     return Promise.resolve(inst)
   }
@@ -176,7 +184,6 @@ function runDispose(inst: any) {
   const state = getState(inst)
   if (state.disposeStarted) return
   state.disposeStarted = true
-  state.disposed = true
 
   const dispose = inst.dispose
   const setup = inst.setup
@@ -356,33 +363,6 @@ export class LifecycleAbility {
     return result
   }
 
-  /**
-   * AOP overloading for the static `ToolFunc.unregister`: runs `dispose` when, and only when,
-   * this removal left the tool unreachable from this registry's chain.
-   *
-   * In a hierarchical registry a child layer's shadow copy of a shared dependency is removed
-   * here while the parent layer still holds the very same instance — `get` still resolves to
-   * it, so it must survive. Only once no layer of this chain resolves to the instance anymore
-   * has its owning layer lost the last physical hold. The `disposeStarted` guard keeps an
-   * `unregister({scope: 'inherited'|'all'})` walk from disposing more than once.
-   */
-  static $unregister(target?: any, options?: any) {
-    const Tools = (this as any).self || this
-    const inst: any = typeof target === 'string' ? (Tools.items[target] || Tools.get(target)) : target
-    const result = (this as any).super.call(Tools, target, options)
-    if (inst && inst.name && Tools.get(inst.name) !== inst) {
-      try {
-        runDispose(inst)
-      } catch (e) {
-        // Teardown is best-effort: a failing dispose must not abort the rest of the cleanup
-        // (notably releasing the tool's dependencies). Surface it and carry on.
-        state(inst).disposeError = e
-        console.error(`[ToolFunc] dispose of "${inst.name}" failed:`, e)
-      }
-    }
-    return result
-  }
-
   /** AOP overloading for `ToolFunc.runSync`: applies the readiness gate. */
   $runSync(params?: any, ctx?: any) {
     const inst = (this as any).self || this
@@ -504,17 +484,21 @@ export class LifecycleAbility {
   }
 
   /**
-   * The synchronous `ToolFunc.unregister`, awaited: removes the tool and resolves once its
-   * `dispose` has settled, rethrowing whatever the hook threw.
+   * The synchronous `ToolFunc.unregister`, awaited: removes the tool and resolves once its whole
+   * teardown has settled — its own `dispose` *and* the release of the dependencies it held,
+   * which is serialized behind it. Rethrows whatever the `dispose` hook threw.
+   *
+   * Awaiting the teardown chain (rather than just the target's `dispose`) matters because the
+   * teardown of a dependency is chained after its dependent's: resolving earlier would let a
+   * caller observe a half-torn-down dependency tree.
    */
   static async unregisterAsync(target?: any, options?: any): Promise<ToolFunc|undefined> {
     const Tools = this as any
     const inst = Tools.unregister(target, options)
-    if (inst && getState(inst).disposeStarted) {
-      const lc = getState(inst)
-      if (lc.disposePromise) await lc.disposePromise
-      if (lc.disposeError) throw lc.disposeError
-    }
+    if (!inst) return inst
+    const lc = state(inst)
+    if (lc.teardownPromise) await lc.teardownPromise.catch(() => {})
+    if (lc.disposeError) throw lc.disposeError
     return inst
   }
 
@@ -558,6 +542,62 @@ function state(inst: any) {
   return getState(inst._origin || inst)
 }
 
+/**
+ * Releases the dependencies of `inst`, last declared first, and returns a promise settling once
+ * every one of them has been torn down.
+ *
+ * The loop runs synchronously until it meets an *asynchronous* teardown; from that point on the
+ * remaining dependencies are chained behind it. That keeps the reverse order a property of the
+ * actual teardown — not merely of its invocation — while leaving the purely synchronous case
+ * synchronous, so `unregister()` stays as cheap as it always was.
+ */
+function releaseDependencies(Tools: any, inst: any): Promise<any> | undefined {
+  let pending: Promise<any> | undefined
+  for (const dep of (Tools as any)._dependencyReleaseOrder(inst)) {
+    pending = pending
+      ? pending.catch(() => {}).then(() => releaseDependency(Tools, dep))
+      : releaseDependency(Tools, dep)
+  }
+  return pending
+}
+
+/** Unregisters one dependency, returning its teardown promise when that teardown is asynchronous. */
+function releaseDependency(Tools: any, dep: any): Promise<any> | undefined {
+  const removed = Tools.unregister(dep.name)
+  return removed ? state(removed).teardownPromise : undefined
+}
+
+/**
+ * The registry's `_releaseInstance`, extended with the lifecycle: the instance's own `dispose`
+ * runs first — while its dependencies are still alive — and only then are those dependencies
+ * released, last declared first, each one waited for before the next one starts.
+ *
+ * It is installed over `ToolFunc._releaseInstance` so that it runs in the registry layer that
+ * actually removed the instance, whether the removal came from `unregister()` or from `clear()`.
+ */
+function releaseInstance(this: any, inst: any) {
+  const Tools = this
+  const lc = state(inst)
+  try {
+    // Only tear down when no layer of this chain resolves to the instance anymore: a shadow copy
+    // in a child layer, or an ancestor still holding it, keeps it alive.
+    if (inst && inst.name && Tools.get(inst.name) !== inst) {
+      runDispose(inst)
+    }
+  } catch (e) {
+    // Teardown is best-effort: a failing dispose must not abort the rest of the cleanup
+    // (notably releasing the tool's dependencies). Surface it and carry on.
+    lc.disposeError = e
+    console.error(`[ToolFunc] dispose of "${inst.name}" failed:`, e)
+  }
+
+  // Dependencies are released only once the owner's teardown has settled, so the release order is
+  // the order in which the resources actually become unused.
+  lc.teardownPromise = lc.disposePromise
+    ? lc.disposePromise.catch(() => {}).then(() => releaseDependencies(Tools, inst))
+    : releaseDependencies(Tools, inst)
+}
+
 
 function onInjectionSuccess(Tool: typeof ToolFunc) {
   // `setup` is already part of the core schema (it has always been user-facing config); `dispose`
@@ -565,6 +605,8 @@ function onInjectionSuccess(Tool: typeof ToolFunc) {
   if (Tool.defineProperties) Tool.defineProperties(Tool, {
     dispose: { type: 'function' },
   })
+  // Holder-first, LIFO teardown (see `releaseInstance`).
+  ;(Tool as any)._releaseInstance = releaseInstance
 }
 
 export const makeToolFuncLifecycle = createAbilityInjector(LifecycleAbility, { afterInjection: onInjectionSuccess as any })

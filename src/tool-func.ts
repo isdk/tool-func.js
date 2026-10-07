@@ -845,6 +845,37 @@ export class ToolFunc extends AdvancePropertyManager {
    * layer. Inherited items from parent registries remain visible through the prototype chain.
    */
   static clear() {
+    // Release what this layer owns *before* dropping the tables: a registered tool holds real
+    // resources (a connection, a timer, a subscription) and its `dispose` — plus the release of
+    // the dependencies it solely holds — would otherwise never run. Swapping the tables alone
+    // leaks every one of them.
+    //
+    // Tools are released in reverse dependency order, for the same reason a tool is released
+    // before the dependencies it declares: one that is still named in another live tool's
+    // `depends` has to wait. Neither `items` order nor its reverse expresses that on its own —
+    // a tool is inserted *before* the dependencies it declares, but a dependency registered
+    // separately may well come first — so the order is derived from the declared edges.
+    let remaining = Object.keys(this.items || {})
+    while (remaining.length) {
+      const held: string[] = []
+      const releasable: string[] = []
+      for (const name of remaining) {
+        if (this._isStillHeld(name)) held.push(name)
+        else releasable.push(name)
+      }
+      // A dependency cycle leaves nothing releasable; break it by releasing the rest in order.
+      const batch = releasable.length ? releasable : held
+      for (const name of batch) {
+        try {
+          this.unregister(name, { force: true, scope: 'local' })
+        } catch (e) {
+          // Best-effort: a failing teardown must not leave the registry half-cleared.
+          console.error(`[ToolFunc] teardown of "${name}" failed during clear():`, e)
+        }
+      }
+      remaining = releasable.length ? held : []
+    }
+
     const protoItems = Object.getPrototypeOf(this.items || {});
     const protoAliases = Object.getPrototypeOf(this.aliases || {});
     const protoRefCounts = Object.getPrototypeOf(this._refCounts || {});
@@ -1175,7 +1206,7 @@ export class ToolFunc extends AdvancePropertyManager {
         }
       }
       if (inst) {
-        this._releaseDependencies(inst)
+        this._releaseInstance(inst)
       }
     }
 
@@ -1210,13 +1241,56 @@ export class ToolFunc extends AdvancePropertyManager {
     }
   }
 
-  protected static _releaseDependencies(inst: ToolFunc) {
-    const depends = inst.depends
-    if (depends) {
+  /**
+   * Whether any tool currently registered in this layer names `name` in its `depends`.
+   *
+   * Only *live* tools are considered, so a dependency owned by a parent layer never keeps a
+   * locally-owned tool waiting — that tool's removal releases its own hold and stops there.
+   */
+  protected static _isStillHeld(name: string): boolean {
+    for (const key of Object.keys(this.items || {})) {
+      const depends = this.items[key]?.depends
+      if (!depends) continue
       for (const dep of Object.values(depends)) {
-        if (dep instanceof ToolFunc) { this.unregister(dep.name!) }
+        if (dep instanceof ToolFunc && dep.name === name) return true
       }
     }
+    return false
+  }
+
+  /**
+   * The dependencies of `inst`, in the order they must be released: **reverse declaration order**.
+   *
+   * A dependency is acquired — and therefore declared — before the tools that use it, and it must
+   * be released after them. Reversing the acquisition order is the one convention that keeps both
+   * directions correct: declare a dependency before the tool that uses it, and every dependency
+   * outlives everything that depends on it. Declaration order is also the acquisition order, so a
+   * single convention covers both ends of the lifetime.
+   */
+  protected static _dependencyReleaseOrder(inst: ToolFunc): ToolFunc[] {
+    const depends = inst.depends
+    if (!depends) return []
+    return Object.values(depends)
+      .filter((dep): dep is ToolFunc => dep instanceof ToolFunc)
+      .reverse()
+  }
+
+  protected static _releaseDependencies(inst: ToolFunc) {
+    for (const dep of this._dependencyReleaseOrder(inst)) {
+      this.unregister(dep.name!)
+    }
+  }
+
+  /**
+   * Finalizes an instance that has just been physically removed from this layer.
+   *
+   * The instance's own teardown comes **before** its dependencies are released: a dependency must
+   * outlive everything that uses it, so a dependent's `dispose` still finds a live dependency to
+   * give back what its `setup` took. The lifecycle ability overrides this to drive the `dispose`
+   * hook — and to wait for an asynchronous teardown — between the two steps.
+   */
+  protected static _releaseInstance(inst: ToolFunc) {
+    this._releaseDependencies(inst)
   }
 
   /**

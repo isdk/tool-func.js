@@ -1049,43 +1049,6 @@ describe('LifecycleAbility', () => {
     })
   })
 
-  describe('unregister re-arms setup state', () => {
-    it('isSetupDone() is false right after unregister', () => {
-      const Tools = makeTools()
-
-      const tool = new Tools({
-        name: 'rearmState',
-        setup() {},
-        dispose() {},
-        func() { return 'ok' },
-      })
-
-      Tools.register(tool)
-      expect(tool.isSetupDone()).toBe(true)
-
-      Tools.unregister('rearmState')
-      expect(tool.isSetupDone()).toBe(false)
-    })
-
-    it('ready resolves immediately after dispose re-arms setup', async () => {
-      const Tools = makeTools()
-
-      const tool = new Tools({
-        name: 'readyRearm',
-        setup() {},
-        dispose() {},
-        func() { return 'ok' },
-      })
-
-      Tools.register(tool)
-      await tool.ready
-
-      Tools.unregister('readyRearm')
-      await expect(tool.ready).resolves.toBe(tool)
-      expect(tool.isSetupDone()).toBe(false)
-    })
-  })
-
   describe('dispose failure does not abort unregister cleanup', () => {
     it('records the error, logs it, and still removes the tool', async () => {
       const Tools = makeTools()

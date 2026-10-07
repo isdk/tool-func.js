@@ -108,9 +108,18 @@ lifecycle:
   hits zero, or `force` is used). Because the synchronous `unregister()` cannot await it, its returned
   promise is tracked and any rejection is logged; use **`unregisterAsync()`** to await it and observe
   the real error.
-- **Re-arm**: a successful `dispose` re-arms `setup`, so an unregister/register cycle rebuilds whatever
-  teardown released. An instance with a `dispose` hook is therefore strictly paired: executing it before
-  `register()` is treated as a bug.
+- **Teardown order**: a tool is torn down *before* the dependencies it declares, and those dependencies
+  are released last-declared first. A dependency must outlive everything that uses it, so a dependent's
+  `dispose` still finds a live dependency to give back what its `setup` took — stopping a timer before
+  closing the pool it queries. Declare dependencies in dependency order (a dependency before the tool
+  that uses it): that single convention keeps both the acquisition order and the release order (its
+  reverse) correct. `unregisterAsync()` awaits the whole chain — the tool's own `dispose` *and* the
+  dependency releases serialized behind it — and `Tools.clear()` runs the same teardown for everything
+  the layer owns instead of just dropping the tables.
+- **Re-arm**: a successful `dispose` re-arms the lifecycle, so every unregister/register cycle runs
+  `setup` again *and* is torn down again in turn — `dispose` is the exact inverse of `setup`. An
+  instance with a `dispose` hook is therefore strictly paired: executing it before `register()` is
+  treated as a bug.
 - **Async setup**: if `setup` returns a promise, the instance becomes *pending*. `run()` / `runWithPos()`
   await it automatically; `runSync()` / `runWithPosSync()` refuse to run and point at the async entry
   points (`run()` / `await tool.ready`). The **static helpers** `registerAsync()`, `createAsync()`,
