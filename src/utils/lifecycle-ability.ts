@@ -2,6 +2,7 @@ import { AbilityOptions, createAbilityInjector } from 'custom-ability'
 import { defineProperty } from 'util-ex'
 import { NotFoundError, throwError } from '@isdk/common-error'
 import { ToolFunc } from '../tool-func'
+import { createCallbacksTransformer } from './stream'
 
 export interface LifecycleAbilityOptions extends AbilityOptions {
 }
@@ -61,6 +62,197 @@ function getState(inst: any): LifecycleState {
 function isThenable(value: any): value is PromiseLike<any> {
   return !!value && (typeof value === 'object' || typeof value === 'function') &&
     typeof (value as any).then === 'function'
+}
+
+function isReadableStream(value: any) {
+  return typeof ReadableStream !== 'undefined' && value instanceof ReadableStream
+}
+
+/** True when the tool declares the per-call `cleanup` hook (see `runWithCleanup`). */
+function hasCleanupHook(inst: any) {
+  return typeof inst.cleanup === 'function'
+}
+
+/**
+ * Whether *this* layer is the one that will execute the body, and therefore owns the call scope.
+ *
+ * A tool declaring `cleanup` always runs on a shadow instance — that is exactly what its own
+ * `$_shouldIsolate` forces — so a layer carrying its own `ctx` is always the executor: the check is a
+ * property lookup rather than a dispatched `_shouldIsolate` call, which matters because the shadow
+ * recursion enters the entry point twice per call. The `_shouldIsolate` fallback keeps an ability
+ * that could still veto isolation (there is none today) from silently losing the scope.
+ */
+function ownsCallScope(inst: any, params: any, ctx: any): boolean {
+  if (Object.prototype.hasOwnProperty.call(inst, 'ctx')) return true
+  return !inst._shouldIsolate(params, ctx)
+}
+
+/**
+ * Keeps capability metadata (`TaskPromise.task`, ...) on the promise handed back to the caller.
+ *
+ * Wrapping a result in a promise of our own would otherwise silently strip those properties, so a
+ * `cleanup` tool that also uses the cancelable ability would stop exposing `task` on `run()`.
+ */
+function inheritPromiseProps(source: any, target: any) {
+  for (const key of Object.keys(source)) {
+    if (key === 'then' || key === 'catch' || key === 'finally') continue
+    try { target[key] = source[key] } catch {}
+  }
+  return target
+}
+
+function logAsyncCleanupError(inst: any, err: any) {
+  console.error(`[ToolFunc] async cleanup of "${inst.name}" failed:`, err)
+}
+
+/** Shared result for the (common) call that carries no signal at all, so nothing is allocated. */
+const NO_SIGNALS: AbortSignal[] = []
+
+/**
+ * The abort signals that must end a call's scope when they fire.
+ *
+ * `ctx` is what the entry point was given, while `inst.ctx` is the isolated runner's own context:
+ * the core passes the *params* — not the context — down to the shadow instance, so the executor
+ * layer can only find the signal there. The no-context case returns a shared empty result: most calls
+ * are not cancellable, and this runs on every `cleanup` call.
+ */
+function collectAbortSignals(inst: any, ctx: any): AbortSignal[] {
+  const own = inst.ctx
+  if (!ctx && !own) return NO_SIGNALS
+  let result: AbortSignal[] | undefined
+  const add = (value: any) => {
+    if (value && typeof value.addEventListener === 'function' && !value.aborted) {
+      if (!result) result = []
+      result.push(value)
+    }
+  }
+  if (ctx) {
+    add(ctx.signal)
+    add(ctx.aborter && ctx.aborter.signal)
+  }
+  if (own && own !== ctx) {
+    add(own.signal)
+    add(own.aborter && own.aborter.signal)
+  }
+  return result || NO_SIGNALS
+}
+
+function cleanupAggregateError(inst: any, callError: any, cleanupError: any) {
+  return new AggregateError(
+    [callError, cleanupError],
+    `[ToolFunc] call of "${inst.name}" failed and its cleanup failed too`,
+  )
+}
+
+/**
+ * Runs a single call and then the tool's `cleanup` hook, on every terminal path.
+ *
+ * `setup`/`dispose` are *registration* scoped; `cleanup` is *call* scoped. It is the exact inverse
+ * of whatever one call acquired, and it runs:
+ *
+ * - after a synchronous result or a synchronous throw,
+ * - after an async body's promise settles (resolve and reject alike),
+ * - once a returned `ReadableStream` is finished, failed or cancelled — the value is produced
+ *   before it is consumed, so `finally` cannot express this,
+ * - when the call's signal aborts (`ctx.signal` / `ctx.aborter.signal`), because a cancelled call
+ *   never unwinds its own stack and a `finally` would never run.
+ *
+ * It runs at most once per call, with `this` bound to the instance that actually executed the body
+ * (the isolated runner), so the resources parked on `this` are exactly the ones released. A body
+ * that threw before acquiring anything has nothing to release: write `cleanup` defensively (e.g.
+ * `this.conn?.close()`) since it is invoked for every terminal path, not only successful ones.
+ *
+ * The sync/async contract mirrors `unregister()`: a synchronous entry point can only *initiate* a
+ * release. When `cleanup` returns a promise there is nothing to await on those paths, so its
+ * rejection is logged rather than thrown; the async entry points already return a promise and chain
+ * the release behind it, so awaiting the call awaits the cleanup.
+ */
+function runWithCleanup(inst: any, ctx: any, invoke: () => any) {
+  const cleanup = inst.cleanup
+  let settled = false
+  let signals: AbortSignal[] = []
+  let onAbort: (() => void) | undefined
+
+  const detachAbort = () => {
+    if (onAbort) {
+      for (const signal of signals) {
+        try { signal.removeEventListener('abort', onAbort) } catch {}
+      }
+    }
+    onAbort = undefined
+    signals = []
+  }
+
+  // Every terminal path below funnels through here, which is what makes it exactly-once.
+  const drain = () => {
+    if (settled) return
+    settled = true
+    detachAbort()
+    return cleanup.call(inst)
+  }
+
+  signals = collectAbortSignals(inst, ctx)
+  if (signals.length) {
+    onAbort = () => {
+      try {
+        const released = drain()
+        if (isThenable(released)) Promise.resolve(released).catch((err: any) => logAsyncCleanupError(inst, err))
+      } catch (err) {
+        logAsyncCleanupError(inst, err)
+      }
+    }
+    for (const signal of signals) {
+      try { signal.addEventListener('abort', onAbort, { once: true }) } catch {}
+    }
+  }
+
+  let result: any
+  try {
+    result = invoke()
+  } catch (callError) {
+    let released: any
+    try {
+      released = drain()
+    } catch (cleanupError) {
+      throw cleanupAggregateError(inst, callError, cleanupError)
+    }
+    if (isThenable(released)) Promise.resolve(released).catch((err: any) => logAsyncCleanupError(inst, err))
+    throw callError
+  }
+
+  if (isThenable(result)) {
+    const settledResult = Promise.resolve(result).then(
+      (value: any) => {
+        const released = drain()
+        return isThenable(released) ? released.then(() => value) : value
+      },
+      (callError: any) => {
+        let released: any
+        try {
+          released = drain()
+        } catch (cleanupError) {
+          throw cleanupAggregateError(inst, callError, cleanupError)
+        }
+        if (!isThenable(released)) throw callError
+        return Promise.resolve(released).then(
+          () => { throw callError },
+          (cleanupError: any) => { throw cleanupAggregateError(inst, callError, cleanupError) },
+        )
+      },
+    )
+    return inheritPromiseProps(result, settledResult)
+  }
+
+  if (isReadableStream(result)) {
+    // The value is produced before it is consumed, so only the stream's close can end the scope.
+    return result.pipeThrough(createCallbacksTransformer({ onClose: () => drain() }))
+  }
+
+  // Synchronous terminal. The release may still be asynchronous, and a synchronous entry point can
+  // only start it — the same rule `unregister()` follows for `dispose`.
+  const released = drain()
+  if (isThenable(released)) Promise.resolve(released).catch((err: any) => logAsyncCleanupError(inst, err))
+  return result
 }
 
 /**
@@ -353,6 +545,8 @@ export declare interface LifecycleAbility {
  *   the tool goes before the dependencies it declares, and those are released last-declared first
  * - `clear()` / `clearAsync()` release everything the layer owns through that same lifecycle
  * - `dispose` re-arms `setup`, so an unregister/register cycle rebuilds whatever was released
+ * - `cleanup` extends that symmetry to the *call*: the per-call scope of every entry point, closed
+ *   once per call on success, throw, abort, and after a returned stream ends
  * - an async `setup` makes the instance *pending*: `run()` awaits it, `runSync()` refuses it
  *
  * Inject it once, on the registry class you actually use:
@@ -408,18 +602,48 @@ export class LifecycleAbility {
     return result
   }
 
-  /** AOP overloading for `ToolFunc.runSync`: applies the readiness gate. */
+  /**
+   * AOP overloading for `ToolFunc.runSync`: applies the readiness gate and, for a tool that declares
+   * `cleanup`, the per-call scope.
+   *
+   * Only the layer that actually executes the body opens the scope. When this layer is about to be
+   * shadowed (`_shouldIsolate`), the core recurses into a shadow runner whose own `$runSync` call
+   * owns the cleanup — which is what keeps the four entry points (and the shadowing recursion) from
+   * opening four nested scopes for one call.
+   */
   $runSync(params?: any, ctx?: any) {
     const inst = (this as any).self || this
     assertRunnable(inst)
-    return (this as any).super.call(inst, params, ctx)
+    if (!hasCleanupHook(inst) || !ownsCallScope(inst, params, ctx)) {
+      return (this as any).super.call(inst, params, ctx)
+    }
+    return runWithCleanup(inst, ctx, () => (this as any).super.call(inst, params, ctx))
   }
 
-  /** AOP overloading for `ToolFunc.runWithPosSync`: applies the readiness gate. */
+  /** AOP overloading for `ToolFunc.runWithPosSync`: the positional twin of `$runSync`. */
   $runWithPosSync(...params: any[]) {
     const inst = (this as any).self || this
     assertRunnable(inst)
-    return (this as any).super.apply(inst, params)
+    if (!hasCleanupHook(inst) || !ownsCallScope(inst, params, undefined)) {
+      return (this as any).super.apply(inst, params)
+    }
+    return runWithCleanup(inst, undefined, () => (this as any).super.apply(inst, params))
+  }
+
+  /**
+   * AOP overloading for `ToolFunc._shouldIsolate`.
+   *
+   * A tool that declares `cleanup` parks per-call resources on `this` for the body to use and the
+   * hook to release, so isolation is not optional for it: without a shadow instance, concurrent
+   * calls would collide on the very fields that call's cleanup is about to release. This mirrors how
+   * the cancelable ability isolates a cancelable tool, and it is why no opt-in flag is needed.
+   */
+  $_shouldIsolate(params?: any, ctx?: any): boolean {
+    const Super = (this as any).super
+    const that = (this as any).self || this
+    if (Super && Super.call(that, params, ctx)) return true
+    if (Object.prototype.hasOwnProperty.call(that, 'ctx')) return false
+    return hasCleanupHook(that)
   }
 
   /**
@@ -695,9 +919,11 @@ function releaseInstance(this: any, inst: any) {
 
 function onInjectionSuccess(Tool: typeof ToolFunc) {
   // `setup` is already part of the core schema (it has always been user-facing config); `dispose`
-  // is the other half of the pair and only exists once the ability is installed.
+  // (registration scoped) and `cleanup` (call scoped) are the other halves of the pair and only
+  // exist once the ability is installed.
   if (Tool.defineProperties) Tool.defineProperties(Tool, {
     dispose: { type: 'function' },
+    cleanup: { type: 'function' },
   })
   // Holder-first, LIFO teardown (see `releaseInstance`).
   ;(Tool as any)._releaseInstance = releaseInstance

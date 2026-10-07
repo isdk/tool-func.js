@@ -127,6 +127,18 @@ lifecycle:
   `setup` again *and* is torn down again in turn — `dispose` is the exact inverse of `setup`. An
   instance with a `dispose` hook is therefore strictly paired: executing it before `register()` is
   treated as a bug.
+- **`cleanup` — the call-scoped twin of `dispose`**: `setup`/`dispose` are tied to the instance's
+  *registration* lifetime, `cleanup` to a single *call*. Declaring it releases whatever that call
+  acquired, on every terminal path and at most once: a synchronous result or throw, a settled promise
+  (resolve *and* reject), a returned `ReadableStream` (once it finishes, fails or is cancelled), and an
+  abort of the call's signal — a cancelled call never unwinds its own stack, so a `finally` would never
+  run. The body parks the per-call resources on `this` (`this.tx = begin()`) and `cleanup` releases
+  exactly those: declaring the hook also makes each call run on its own isolated shadow instance, so
+  concurrent calls cannot collide. Write it defensively (`this.tx?.commit()`), since it is invoked for
+  a body that threw before acquiring anything too. A synchronous entry point can only *start* an async
+  release (its rejection is logged); `run()`/`runWithPos()` already return a promise and therefore
+  resolve only after the cleanup settled. When the body *and* the cleanup fail, the call reports one
+  `AggregateError`.
 - **Async setup**: if `setup` returns a promise, the instance becomes *pending*. `run()` / `runWithPos()`
   await it automatically; `runSync()` / `runWithPosSync()` refuse to run and point at the async entry
   points (`run()` / `await tool.ready`). The **static helpers** `registerAsync()`, `createAsync()`,
@@ -170,11 +182,62 @@ const slow = new Tools({
 await Tools.registerAsync(slow);       // waits for setup (and dependencies) to settle
 await Tools.whenAllReady();            // waits for every tool in the registry to be ready
 await Tools.createAsync({ name: 'temp', setup() { /* ... */ } });  // creates + sets up, without registering
+
+// Per-call resources: `cleanup` is the call-scoped twin of `dispose`.
+const tx = new Tools({
+  name: 'tx',
+  func() {
+    this.tx = db.begin();   // acquired by the body, whenever (and if) it is needed
+    return this.tx.query('select 1');
+  },
+  cleanup() { return this.tx?.commit(); },  // runs when the call ends, however it ends
+});
+await tx.run();  // resolves only after cleanup() has settled
 ```
 
 > **⚠️ A bare instance is a no-op for lifecycle.** `new ToolFunc({ setup(){...}, dispose(){...} })
 > .register()` does nothing with the hooks. If you need lifecycle, always construct from a registry
 > class that has been enhanced with `makeToolFuncLifecycle` (or a subclass of one).
+
+### The Per-Call Scope: `cleanup` and Its Terminal Paths
+
+`setup`/`dispose` are **registration** scoped — one resource lifetime per registration. `cleanup` is
+**call** scoped — one resource lifetime per `run()`. Declaring it makes the framework close that scope
+exactly once, no matter how the call ends:
+
+| Terminal path | When `cleanup` runs |
+| --- | --- |
+| Synchronous return | right after the body returns its value |
+| Synchronous throw | in the throw path, before the error is rethrown |
+| Async body (promise) | after it settles — on resolve *and* on reject; `run()` resolves only once the release settled |
+| Returned `ReadableStream` | when the stream ends, errors or is cancelled by the consumer |
+| Call signal aborts | as soon as `ctx.signal` / `ctx.aborter.signal` fires |
+
+The last two are the ones `try/finally` cannot express, and the reason this belongs to the framework:
+
+- **A stream's value is produced before it is consumed.** `finally` runs when the body *returns* the
+  stream — before a single chunk reaches the consumer. The scope stays open until the stream itself
+  closes: the framework pipes it through one identity `TransformStream` whose `onClose` is the release.
+- **A cancelled call never unwinds its own stack.** An `AbortSignal` only *notifies*; it does not throw
+  through your frames, so a `finally` never runs. The scope is closed by the signal instead.
+
+Semantics worth knowing:
+
+- **Exactly once.** Every terminal path funnels into the same release, so a stream that is aborted and
+  then cancelled still releases once.
+- **`this` is the call's shadow instance.** Declaring `cleanup` also forces per-call isolation, so the
+  fields the body parks on `this` are private to that call — concurrent calls cannot collide. Sharing a
+  single resource with nested calls is done through `this.ctx`, which `runAs` targets inherit.
+- **Write it defensively.** `cleanup` is invoked even for a body that threw before acquiring anything,
+  so guard it (`this.tx?.commit()`).
+- **Nesting order.** A nested `runAs`/`runAsSync` child releases its own scope when its own call ends —
+  before the parent continues, hence before the parent releases. When the parent `await`s the child, the
+  child's asynchronous release has already settled by the time the parent resumes.
+- **Sync starts, async waits.** As with `unregister()`, a synchronous entry point can only *initiate* an
+  asynchronous release (its rejection is logged, never thrown). `run()`/`runWithPos()` already return a
+  promise, so they resolve only after the cleanup settled.
+- **One error, not two.** If the body *and* the cleanup both fail, the call reports a single
+  `AggregateError` carrying both.
 
 ### Registration Lifecycle & Reference Counting
 

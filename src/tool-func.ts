@@ -229,6 +229,40 @@ export interface BaseFuncItem {
    * myFunc.unregister(); // <- dispose runs here
    */
   /**
+   * A lifecycle hook called once at the **end of every call**, releasing whatever *that call*
+   * acquired. It is the call-scoped twin of {@link BaseFuncItem.dispose}: while `dispose` is tied to
+   * the instance's registration lifetime, `cleanup` is tied to a single `run()`.
+   *
+   * Because the tools are executed through an isolated shadow instance, the body may park per-call
+   * resources on `this` (`this.tx = begin()`) and `cleanup` releases exactly those — concurrent calls
+   * cannot collide. Declaring `cleanup` is what makes that isolation automatic; no flag is needed.
+   *
+   * It is invoked on every terminal path of the call, at most once: a synchronous result or throw, a
+   * settled promise (resolve *and* reject), a returned `ReadableStream` (once that stream finishes,
+   * fails or is cancelled), and an abort of the call's signal. Write it defensively (`this.tx?.rollback()`),
+   * since a body that threw before acquiring anything still ends the call.
+   *
+   * The hook may return a `Promise`. A synchronous entry point can only *initiate* that release (its
+   * rejection is logged rather than thrown), while `run()`/`runWithPos()` already return a promise and
+   * therefore resolve only after `cleanup` has settled. When both the body and `cleanup` fail, the two
+   * errors are reported as one `AggregateError`.
+   *
+   * NOTE: like {@link BaseFuncItem.setup} and {@link BaseFuncItem.dispose}, this hook is only invoked
+   * by the `makeToolFuncLifecycle` ability. Install it once, on the registry class you actually use:
+   * `const Tools = makeToolFuncLifecycle(ToolFunc)`.
+   *
+   * @example
+   * const Tools = makeToolFuncLifecycle(ToolFunc);
+   * const myFunc = new Tools({
+   *   name: 'tx',
+   *   func() {
+   *     this.tx = db.begin();   // acquired whenever the body needs it, conditionally if you like
+   *     return this.tx.query('select 1');
+   *   },
+   *   cleanup() { return this.tx?.commit() },  // <- runs when the call ends, however it ends
+   * });
+   */
+  /**
    * If true, indicates that this function should be treated as a server-side API.
    * @type {boolean}
    */
@@ -445,7 +479,9 @@ function findRegistryOwner(target: any, name: string): any {
      They turn plain hook functions (stored but ignored by a bare `ToolFunc`) into a symmetric
      lifecycle: `register()` runs `setup`, `dispose()` is the inverse teardown, an async `setup`
      makes the instance *pending* (gated for `runSync` / `runWithPosSync`), and `dispose` re-arms
-     the hook so an unregister/register cycle rebuilds the acquired state.
+     the hook so an unregister/register cycle rebuilds the acquired state. `cleanup` extends the
+     same symmetry to the *call*: it releases that call's resources once, on success, throw, abort,
+     and after a returned stream ends.
      @see makeToolFuncLifecycle @see LifecycleAbility @see LifecycleAbilityOptions
    * - **Parameter Handling**: Automatically handles both positional and named parameters.
  *

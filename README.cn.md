@@ -120,6 +120,15 @@ console.log(message); // 输出: "你好, 张三!"
 - **重置（re-arm）**：一旦 `dispose` 成功，整个生命周期都会为**下一次**注册重新准备好，所以每一次
   unregister / register 循环都会重新运行 `setup`，并在下一个循环里再次被销毁。带有 `dispose` 钩子的实例
   是严格配对的：在调用 `register()` 之前就运行它，会被当作一个错误。
+- **`cleanup` —— `dispose` 的调用期孪生钩子**：`setup`/`dispose` 绑定的是实例的**注册**生命周期，
+  而 `cleanup` 绑定的是**单次调用**。声明它即可释放该次调用所获取的一切，且在每条终止路径上**恰好一次**：
+  同步返回或抛出、Promise 落定（成功与拒绝皆是）、返回的 `ReadableStream`（结束、出错或被取消时），
+  以及调用信号被中止时 —— 被取消的调用不会展开自己的调用栈，所以 `finally` 永远不会执行。
+  函数体把本次调用的资源挂在 `this` 上（`this.tx = begin()`），`cleanup` 释放的正是这些资源；
+  声明该钩子还会让每次调用运行在自己独立的 shadow 实例上，因此并发调用不会互相覆盖。
+  请把它写得防御一些（`this.tx?.commit()`），因为即使函数体在获取任何资源之前就抛出，它也会被调用。
+  同步入口只能**发起**异步释放（其拒绝会被记录）；`run()`/`runWithPos()` 本就返回 Promise，
+  因此只有在 cleanup 落定后才会 resolve。当函数体**与** cleanup 同时失败时，该次调用只会报告一个 `AggregateError`。
 - **异步 setup**：如果 `setup` 返回了一个 Promise，该实例会进入 *pending* 状态。
   `run()` / `runWithPos()` 会自动等待它；`runSync()` / `runWithPosSync()` 则会拒绝运行，
   并指引你改用异步入口（`run()` / `await tool.ready`）。
@@ -165,12 +174,60 @@ const slow = new Tools({
 await Tools.registerAsync(slow);        // 等待 setup（及依赖）落定
 await Tools.whenAllReady();             // 等待注册表里每个工具都就绪
 await Tools.createAsync({ name: 'temp', setup() { /* ... */ } });  // 创建并执行 setup，但不注册
+
+// 调用期资源：`cleanup` 是 `dispose` 的调用期孪生钩子。
+const tx = new Tools({
+  name: 'tx',
+  func() {
+    this.tx = db.begin();   // 由函数体在需要时（且仅在需要时）获取
+    return this.tx.query('select 1');
+  },
+  cleanup() { return this.tx?.commit(); },  // 调用结束时运行，无论以何种方式结束
+});
+await tx.run();  // 只有在 cleanup() 落定之后才会 resolve
 ```
 
 > **⚠️ 裸实例在生命周期上是无操作的。**
 > `new ToolFunc({ setup(){...}, dispose(){...} }).register()` 不会对钩子做任何处理。
 > 如果你需要生命周期，请始终从已用 `makeToolFuncLifecycle` 加强过的注册表类（
 > 或其子类）进行构造。
+
+### 调用期作用域：`cleanup` 与它的四条终止路径
+
+`setup`/`dispose` 是**注册期**作用域 —— 每次注册一个资源生命周期；`cleanup` 则是**调用期**作用域
+—— 每次 `run()` 一个资源生命周期。声明它，框架就会在调用结束时**恰好一次**地关闭该作用域，
+无论这次调用以何种方式结束：
+
+| 终止路径 | `cleanup` 何时运行 |
+| --- | --- |
+| 同步返回 | 函数体返回其值之后立即运行 |
+| 同步抛出 | 在抛出路径中、错误被重新抛出之前运行 |
+| 异步函数体（Promise） | 落定之后 —— 成功与拒绝皆是；`run()` 只会在释放落定后 resolve |
+| 返回 `ReadableStream` | 流结束、出错或被消费者取消时 |
+| 调用信号被中止 | `ctx.signal` / `ctx.aborter.signal` 触发的那一刻 |
+
+后两条正是 `try/finally` 无法表达、因而必须由框架承担的：
+
+- **流的值在被消费之前就已经产生。** `finally` 在函数体**返回**流时就运行了 —— 那时消费者还没拿到
+  任何一个 chunk。作用域会一直保持打开，直到流本身关闭：框架会把它经过一层 identity
+  `TransformStream`，其 `onClose` 就是释放点。
+- **被取消的调用不会展开自己的调用栈。** `AbortSignal` 只是*通知*，不会穿过你的栈帧抛异常，
+  所以 `finally` 永远不会运行。因此由信号来关闭作用域。
+
+几条需要知道的语义：
+
+- **恰好一次。** 每条终止路径都汇入同一个释放，所以先被中止、随后又被取消的流也只释放一次。
+- **`this` 是该次调用的 shadow 实例。** 声明 `cleanup` 同时会强制调用期隔离，因此函数体挂在 `this`
+  上的字段是该次调用私有的 —— 并发调用不会互相覆盖。要把同一个资源共享给嵌套调用，请走 `this.ctx`，
+  `runAs` 的目标会继承它。
+- **请写得防御一些。** 即使函数体在获取任何资源之前就抛出，`cleanup` 依然会被调用，所以要加保护
+  （`this.tx?.commit()`）。
+- **嵌套顺序。** 嵌套的 `runAs`/`runAsSync` 子调用在自己的调用结束时释放自己的作用域 —— 早于父调用继续，
+  因此也早于父调用释放。当父调用 `await` 该子调用时，父调用恢复执行时子调用的异步释放已经落定。
+- **同步只发起，异步才等待。** 与 `unregister()` 一致，同步入口只能**发起**异步释放（其拒绝会被记录，
+  永不抛出）；`run()`/`runWithPos()` 本就返回 Promise，因此只会在 cleanup 落定后 resolve。
+- **只有一个错误，而不是两个。** 如果函数体**与** cleanup 同时失败，该次调用只会报告一个
+  `AggregateError`，同时携带两者。
 
 ### 注册生命周期与引用计数
 
