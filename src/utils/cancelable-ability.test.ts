@@ -569,8 +569,11 @@ describe('CancelableAbility', () => {
     expect(testMultiTask.getRunningTaskCount()).toBe(0)
     expect(aborters[id2]).toBeUndefined()
 
-    await expect(p1).rejects.toThrow()
-    await expect(p2).rejects.toThrow()
+    // 两个任务分别在前面被中止，可能并发 reject：先注册处理器再 await。
+    const p1Rejects = expect(p1).rejects.toThrow()
+    const p2Rejects = expect(p2).rejects.toThrow()
+    await p1Rejects
+    await p2Rejects
   })
 
   it('should abort specific task via instance method and throw on missing taskId', async () => {
@@ -754,10 +757,13 @@ describe('CancelableAbility', () => {
     expect(a1.id).not.toBe(a2.id)
     expect(shared.signal.aborted).toBeFalsy()
 
-    // 中止共享的外部 controller → 两个任务都被联动中止
+    // 中止共享的外部 controller → 两个任务都被联动中止。
+    // 两个任务会同时 reject：先为两者注册处理器再 await，避免 unhandled rejection。
     shared.abort('shared cancel')
-    await expect(p1).rejects.toThrow(/shared cancel/)
-    await expect(p2).rejects.toThrow(/shared cancel/)
+    const p1Rejects = expect(p1).rejects.toThrow(/shared cancel/)
+    const p2Rejects = expect(p2).rejects.toThrow(/shared cancel/)
+    await p1Rejects
+    await p2Rejects
     })
 
     it('should isolate timeout per task when sharing an external AbortController (P2 regression)', async () => {
@@ -908,9 +914,13 @@ describe('CancelableAbility', () => {
     const p1 = runner.run({waitTime: 500, timeout: 40}) as TaskPromise
     const p2 = runner.run({waitTime: 500}) as TaskPromise
 
-    // 组级 deadline + 共享 signal：T1 超时 → 整组中止
-    await expect(p1).rejects.toThrow(/timeout/)
-    await expect(p2).rejects.toThrow(/timeout/)
+    // 组级 deadline + 共享 signal：T1 超时 → 整组中止。
+    // 两个任务共享同一 aborter 会在同一时刻 reject，必须先为两者都注册处理器再 await，
+    // 否则后 await 的那个会短暂处于无处理器状态，被 Node/Vitest 记为 unhandled rejection（随机 flaky）。
+    const p1Rejects = expect(p1).rejects.toThrow(/timeout/)
+    const p2Rejects = expect(p2).rejects.toThrow(/timeout/)
+    await p1Rejects
+    await p2Rejects
     await sleep(10)
 
     // 超时回调必须用闭包捕获的 taskId 清对槽位（修复前读被覆盖的 aborter.id → 残留幽灵条目）

@@ -178,6 +178,13 @@
 * **操作**：必须通过 `hasOwnProperty('ctx')` 检查当前实例是否已经具备自有上下文属性。
 * **后果**：如果没有此检查，在 `isolated: true` 模式下，影子实例执行 `runSync` 时会再次触发隔离，导致栈溢出。
 
+### ⚠️ 9. 中止只会 reject 任务 Promise：调用方契约与 unhandled rejection 防护
+
+* **契约**：被中止的任务（`timeout` / 外部 `signal` / 显式 `abort()`）其 `TaskPromise` 会以 `AbortError` reject，**框架刻意不吞掉这个 reject**。吞掉会掩盖真实的业务异常，也会让 Node 的 `unhandledRejection` 诊断失效；框架不会在 `runAsyncCancelableTask` / `createTaskPromise` 上挂 `catch(() => {})` 之类的兜底。
+* **共享 aborter 的扇出**：当多个并发任务共享同一个 aborter（同一 `tool.with(ctx)` runner 上的并发 `run()`、同一外部 signal/timeout 作用于整组）时，它们会几乎同时一起 reject。
+* **调用方要求**：必须为**每个**可能 reject 的任务 Promise，在 await 之前先挂好处理器。仅按顺序 `await p1; await p2` 时，`p1` 期间 `p2` 可能已经 reject，形成短暂的无处理器窗口，被记为 unhandled rejection；在 Node 默认的 `--unhandled-rejections=throw` 下甚至会直接终止进程。推荐 `Promise.allSettled([p1, p2])`，或先 `p1.catch(...)` / `p2.catch(...)` 再 await。
+* **测试侧纪律**：并发共享 aborter 的用例断言时，也需先为所有 promise 注册匹配器（例如 `const r1 = expect(p1).rejects...; const r2 = expect(p2).rejects...` 之后再分别 await），否则会出现随机 flaky 的 unhandled rejection。
+
 ---
 
 ## 六、 结论

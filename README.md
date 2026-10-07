@@ -491,6 +491,27 @@ try {
 - **Task Handle**: The `task` object is attached to the Promise returned by `ToolFunc.run`. This allows callers to control the task lifecycle directly without needing to know context details.
 - **Timeout Support**: You can pass a `timeout` parameter (via `params` or `ctx`) directly when calling, and the framework will automatically set a timer and trigger `aborter.abort()` after timeout.
 
+#### 4. Abort Rejections & Unhandled Rejection Safety
+
+An aborted task **rejects** its `TaskPromise` with an `AbortError` (because of a `timeout`, an external `signal`, or an explicit `task.abort()`). When several concurrent tasks **share one aborter** — for example, multiple `run()` calls on the same `tool.with(ctx)` runner, or one external signal / timeout that fans out to a whole group — they all reject at (nearly) the same moment.
+
+The library intentionally **does not swallow** these rejections: doing so would hide genuine task failures and disable Node's `unhandledRejection` diagnostics. It is therefore **the caller's responsibility to attach a rejection handler to every task promise**. Register the handlers *before* awaiting any of them; otherwise the not-yet-awaited promises can be reported as unhandled rejections (and, under Node's default `--unhandled-rejections=throw`, can even terminate the process):
+
+```typescript
+const p1 = runner.run({ timeout: 40 })
+const p2 = runner.run() // shares the runner's aborter → rejects together with p1
+
+// ❌ p2 may already have rejected while you are still awaiting p1
+// await p1
+// await p2
+
+// ✅ Attach handlers to both first, then await.
+await Promise.allSettled([p1, p2])
+
+// or keep the settled values:
+const [r1, r2] = await Promise.all([p1.catch(e => e), p2.catch(e => e)])
+```
+
 ### Streaming Responses
 
 To create a tool that can stream its output, follow these steps:

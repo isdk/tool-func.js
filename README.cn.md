@@ -484,6 +484,27 @@ try {
 - **任务句柄 (Task Handle)**: `ToolFunc.run` 返回的 Promise 上挂载了 `task` 对象。这使得调用者无需深入了解上下文细节，即可直接通过句柄控制任务生命周期。
 - **超时支持**: 您可以在调用时直接传入 `timeout` 参数（通过 `params` 或 `ctx`），框架会自动设置定时器并在超时后触发 `aborter.abort()`。
 
+#### 4. 中止的 reject 与 unhandled rejection 防护
+
+任务被中止（`timeout`、外部 `signal` 或显式 `task.abort()`）时，返回的 `TaskPromise` 会以 `AbortError` **reject**。当多个并发任务**共享同一个 aborter** 时——例如在同一个 `tool.with(ctx)` 返回的 runner 上并发调用 `run()`，或一个外部信号 / 超时同时作用于整组任务——它们会在几乎同一时刻一起 reject。
+
+框架**有意不吞掉**这些 reject：否则会掩盖真正的任务失败，也会让 Node 的 `unhandledRejection` 诊断失效。因此**调用方必须为每个可能 reject 的任务 Promise 挂上处理器**。请在 await 任何一个之前，先给**所有**任务挂好处理器；否则尚未被 await 的那些任务会被记为 unhandled rejection（在 Node 默认的 `--unhandled-rejections=throw` 下甚至可能导致进程退出）：
+
+```typescript
+const p1 = runner.run({ timeout: 40 })
+const p2 = runner.run() // 共享 runner 的 aborter → 与 p1 一起 reject
+
+// ❌ 在 await p1 期间，p2 可能已经 reject，从而变成 unhandled rejection
+// await p1
+// await p2
+
+// ✅ 先给两者都注册处理器，再 await。
+await Promise.allSettled([p1, p2])
+
+// 或者需要拿到已 settle 的值：
+const [r1, r2] = await Promise.all([p1.catch(e => e), p2.catch(e => e)])
+```
+
 ### 流式响应
 
 要创建一个可以流式输出其结果的工具，请遵循以下步骤：
