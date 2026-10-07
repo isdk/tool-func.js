@@ -110,6 +110,43 @@ function applyTouchedOptions(inst: any, state: LifecycleState) {
 }
 
 /**
+ * The compile-time inputs of the tool's function, as seen right before `setup` runs.
+ *
+ * `scope` is what a function-expression string is compiled against, so a `setup` that changes it
+ * invalidates the compiled `func` (see `rebuildFuncForScope`).
+ */
+interface CompileInputs {
+  scope: any
+  func: any
+}
+
+/**
+ * Rebuilds the tool's `func` after `setup` changed the tool's `scope`.
+ *
+ * `scope` is a compile-time input: `_createFunction` captures the scope's values while it compiles
+ * the func — whether it was given as a function-expression string or as a function value — so a
+ * scope that arrives with `setup` would otherwise never be visible to the func. Before the
+ * lifecycle ability, `setup` ran in the constructor before `initialize()` compiled the func — this
+ * restores that ordering for every entry point (registration, lazy setup on first run, and the
+ * async setup path alike). Replaying the declared func through `assign()` is what recompiles it
+ * against the new scope.
+ *
+ * A `func` that `setup` replaced directly (`this.func = fn`) is left alone — the same "direct
+ * writes win" rule the touched-options replay follows — as is one the replay has just compiled
+ * from a string, because `assign()` already compiled it against the new scope.
+ */
+function rebuildFuncForScope(inst: any, state: LifecycleState, before: CompileInputs) {
+  const scopeChanged = inst.scope !== before.scope
+  // Only the func that came from the options is rebuilt; a direct write or a replay-compiled one
+  // already reflects the new scope.
+  const funcFromOptions = inst.func === before.func
+  if (!scopeChanged || !funcFromOptions) return
+  const src = state.options && state.options.func
+  if (typeof src !== 'string' && typeof src !== 'function') return
+  inst.assign({ func: src })
+}
+
+/**
  * Invokes `setup` at most once per registration lifetime.
  *
  * @returns A promise resolving to the instance. Rejects with whatever `setup` threw.
@@ -133,6 +170,10 @@ function runSetup(inst: any): Promise<any> {
     return Promise.resolve(inst)
   }
 
+  // The func is compiled against the scope, so remember what it was compiled with: `setup` may
+  // provide or replace the scope, and the compiled func then has to be rebuilt (see below).
+  const before: CompileInputs = { scope: inst.scope, func: inst.func }
+
   const tracker = trackOptions(state.options)
   // The proxy records written keys into its *own* `touched` Set; alias it onto `state`
   // so `applyTouchedOptions` can replay exactly the keys `setup` actually touched.
@@ -153,6 +194,7 @@ function runSetup(inst: any): Promise<any> {
       () => {
         state.pending = false
         applyTouchedOptions(inst, state)
+        rebuildFuncForScope(inst, state, before)
         return inst
       },
       (err: any) => {
@@ -170,6 +212,7 @@ function runSetup(inst: any): Promise<any> {
   }
 
   applyTouchedOptions(inst, state)
+  rebuildFuncForScope(inst, state, before)
   return Promise.resolve(inst)
 }
 

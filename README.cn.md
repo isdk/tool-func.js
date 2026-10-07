@@ -102,6 +102,10 @@ console.log(message); // 输出: "你好, 张三!"
 
 - **`register()`** 会运行 `setup`（幂等的，每个注册生命周期仅运行一次，发生在实例被放入注册表之后）。
   它可以修改收到的 options 对象；它所触碰的键会通过同一条 `initialize` / `assign` 流水线被回放到实例上。
+- **`scope` 是编译期输入**：`func` 会以工具的 `scope` 为作用域编译（其中每个键都会成为函数的
+  闭包变量，`this` 键则成为函数的 `this`），而这些值在编译时就被捕获。因此，`setup` 提供的 `scope`
+  —— 无论通过 `this.scope` 还是通过 options 对象 —— 都会在 func 编译**之前**生效，与 `setup` 仍运行在
+  构造函数中时的行为完全一致。
 - **`dispose`** 是其准确逆操作：当工具被真正移除（引用计数归零，或使用了 `force`）时，它的清理逻辑会运行；
   返回的 Promise 会被追踪，拒绝异常会被记录而非抛出。
 - **同步只发起，异步才等待**：`unregister()` 与 `Tools.clear()` 是同步入口，因此只能**发起** teardown；
@@ -753,7 +757,7 @@ console.log(await ToolFunc.runWithPos('addNumbers', 5, 3)); // 使用 runWithPos
 - **裸表达式会被拒绝** —— 像 `'a + b'` 这样的字符串会被求值为一个值而不是函数，因此会抛出清晰错误。请改用箭头形式。
 - **调用约定** —— 类似 `'(a, b) => ...'` 的字符串函数是位置参数风格，因此请将 `params` 声明为数组（`[{ name: 'a' }, { name: 'b' }]`）以便通过 `run`/`runSync` 使用具名参数，或直接用 `runWithPos`/`runWithPosSync` 调用。
 - **名字推导** —— 未配置 `name` 时，会从具名函数表达式推导名字（如 `'function add(a, b) {...}'` → `add`）。
-- **作用域** —— `scope` 选项提供闭包变量：`new ToolFunc({ name: 't', scope: { secret: 42 }, func: '() => secret' })`。
+- **作用域** —— `scope` 选项提供闭包变量：`new ToolFunc({ name: 't', scope: { secret: 42 }, func: '() => secret' })`。它对**函数值**同样适用（会从其自身源码重新编译；因此方法简写的源码无法绑定作用域，会保持原样），而空作用域或未声明作用域时函数值保持不变 —— 其词法闭包得以保留。安装生命周期能力后，也可以由 `setup` 钩子提供它（见[生命周期钩子](#生命周期钩子-完整的-setup--dispose-生命周期)）。
 
 > **⚠️ 安全提示:** 字符串函数通过 `new Function` 编译，即任意代码执行。请仅从受信任的来源（例如您自己持久化的数据）注册字符串。
 

@@ -144,6 +144,19 @@ export interface BaseFuncItem {
   result?: string|Record<string, any>;
   /**
    * The execution scope or context (`this`) for the function.
+   *
+   * Its keys become closure variables of the func, and a `this` key becomes the func's `this`.
+   * Because those bindings are captured while compiling, the scope is read at compile time:
+   *
+   * - a string {@link FuncItem.func} is always compiled against it;
+   * - a *function* value is compiled from its own source when a non-empty scope is declared — a
+   *   source that is not a function expression (method shorthand, a class method, native code) is
+   *   used as-is instead, since it has no standalone source to compile;
+   * - an empty or absent scope leaves a function value untouched, so its lexical closure survives.
+   *
+   * A {@link BaseFuncItem.setup} hook may provide the scope too: it is applied *before* the func is
+   * compiled (see the lifecycle ability).
+   *
    * @type {any}
    */
   scope?: any;
@@ -170,6 +183,9 @@ export interface BaseFuncItem {
    *
    * Mutating `options` inside the hook still works (including after an `await`): the touched keys
    * are re-applied through the very same `initialize`/`assign` pipeline that built the instance.
+   * A `scope` the hook provides — through `this.scope` or through the options object — is applied
+   * before a string `func` is compiled, and a scope *change* rebuilds it (see
+   * {@link BaseFuncItem.scope}).
    *
    * @param {FuncItem} [options] - The configuration options for the function.
    * @example
@@ -1352,9 +1368,7 @@ export class ToolFunc extends AdvancePropertyManager {
     // if (ctor.items[name]) {
     //   throw new AlreadyExistsError(`Function ${name}`, ToolFunc.name)
     // }
-    if (options.scope) {this.scope = options.scope}
-
-    // initialize PropertyManager
+    // initialize PropertyManager (which assigns `scope` before `func`, see ToolFuncSchema)
     // NOTE: `setup` is deliberately NOT invoked here. It is a *registration* time hook and is
     // driven by the `makeToolFuncLifecycle` ability (see @src/utils/lifecycle-ability.ts), which
     // also owns the `dispose` counterpart. Keeping it out of the constructor is what makes
@@ -1717,6 +1731,37 @@ export class ToolFunc extends AdvancePropertyManager {
 }
 
 /**
+ * Whether the tool declares a `scope` with at least one bindable key.
+ *
+ * An empty (or absent) scope binds nothing, so a function value is then left exactly as it is
+ * instead of being needlessly recompiled from its source — which would drop its lexical closure.
+ */
+function hasScopeKeys(scope: any): boolean {
+  return !!scope && typeof scope === 'object' && Object.keys(scope).length > 0
+}
+
+/**
+ * Compiles a function's own source against the declared `scope`, so the scope's keys become closure
+ * variables of the result (and a `this` key becomes its `this`). `_createFunction` can only bind a
+ * scope while it compiles source text, hence the round-trip through `toString()`.
+ *
+ * Returns `undefined` when the source is not a compilable function expression — a method-shorthand
+ * function (`foo() {}`), a class method, native code, or a scope whose keys are not valid parameter
+ * names. The caller then keeps the original function: rejecting it would break the
+ * closure-preserving default for perfectly usable tools, while keeping it leaves the tool runnable
+ * with only the unbindable scope keys absent.
+ */
+function tryCompileFunc(fn: Function, dest: ToolFunc): Function|undefined {
+  try {
+    const compiled = _createFunction(fn.toString(), dest.scope)
+    return typeof compiled === 'function' ? compiled : undefined
+  } catch {
+    // The source (or the scope's keys) cannot be compiled — see above.
+    return undefined
+  }
+}
+
+/**
  * Defines the schema for `ToolFunc` properties, used by `AdvancePropertyManager`.
  * This controls how properties are assigned and exported.
  * @internal
@@ -1725,6 +1770,13 @@ export const ToolFuncSchema = {
   name: {type: 'string'},
   description: {type: 'string'},
   title: {type: 'string'},
+  /**
+   * Declared *before* `func` on purpose: `assign()` walks the schema in declaration order and the
+   * `func` hook compiles a function-expression string against `dest.scope`, so the scope must
+   * reach the instance first. Kept out of the exported data (`exported: false`) like `depends`:
+   * it holds runtime references, not serializable metadata.
+   */
+  scope: {type: 'object', exported: false},
   func: {
     type: 'function',
     assign(value: Function|string, dest:ToolFunc, src?:ToolFunc, name?: string, options?: any) {
@@ -1734,11 +1786,7 @@ export const ToolFuncSchema = {
       if (isExported) {
         result = valueType === 'function' ? value.toString() : value;
       } else if (valueType === 'string') {
-        // Only string funcs are compiled (into the declared `scope`). Function
-        // values are assigned directly (result === value) to preserve closures
-        // and to support method-shorthand / arrow / function-expression syntax
-        // as-is, instead of recompiling via toString() (which breaks shorthand
-        // and discards the lexical closure).
+        // A string func is always compiled (into the declared `scope`).
         try {
           result = _createFunction(value as string, dest.scope)
         } catch (e) {
@@ -1749,6 +1797,18 @@ export const ToolFuncSchema = {
           // Bare expressions like 'a + b' evaluate to a value instead.
           throwError(`the func string of "${dest.name || 'unnamed'}" must be a function expression (e.g. "(a, b) => a + b"), but it evaluates to ${typeof result}`)
         }
+      } else if (valueType === 'function' && hasScopeKeys(dest.scope)) {
+        // A function value is assigned directly — that preserves its closure and supports
+        // method-shorthand / arrow / function-expression syntax as-is, instead of recompiling via
+        // toString() (which breaks shorthand and discards the lexical closure). The one thing a
+        // direct assignment cannot do is bind `scope`, because the scope keys are closure
+        // variables that only exist while the source text is compiled. So a *declared, non-empty*
+        // `scope` is honoured by compiling the function's source against it, as it always was; a
+        // source that is not a compilable function expression (method shorthand, native code, a
+        // class method...) is left as-is rather than rejected — its scope keys are simply not
+        // bindable.
+        const compiled = tryCompileFunc(value as unknown as Function, dest)
+        if (compiled) { result = compiled }
       }
       return result;
     },

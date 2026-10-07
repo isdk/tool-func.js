@@ -4,6 +4,10 @@ import { ToolFunc, ToolFuncSchema } from '../src/tool-func';
 import { AsyncFeatures, AsyncFeatureBits } from '../src/utils/async-features';
 import { NotFoundError } from '@isdk/common-error';
 
+// The funcs below deliberately read a *free variable*: it is `scope` that binds it, at compile
+// time (a func defined in a script or loaded from data has no other way to reach it).
+declare const secretValue: number;
+
 describe('ToolFunc Additional Features', () => {
   beforeEach(() => {
     // Clear global registry
@@ -299,6 +303,56 @@ describe('ToolFunc Additional Features', () => {
       });
 
       expect(tool.runSync()).toBe(42);
+    });
+
+    it('should use scope when creating function from a function value', () => {
+      const scope = { secretValue: 42 };
+      const tool = new ToolFunc({
+        name: 'scopeFnTool',
+        scope,
+        func: (() => secretValue) as any
+      });
+
+      expect(tool.runSync()).toBe(42);
+    });
+
+    it('should keep a func usable when its source is not a function expression', () => {
+      // Method shorthand has no standalone `toString()`, so the scope cannot be bound; the func
+      // keeps working instead of being rejected.
+      const scope = { secretValue: 42 };
+      const impl = { func() { return 'ok'; } };
+      const tool = new ToolFunc({ name: 'shorthandTool', scope, func: impl.func });
+
+      expect(tool.runSync()).toBe('ok');
+    });
+
+    it('should preserve the lexical closure of a func when no scope is declared', () => {
+      const prefix = 'Hi';
+      const tool = new ToolFunc({ name: 'closureTool', func: () => `${prefix} there` });
+
+      expect(tool.runSync()).toBe('Hi there');
+    });
+
+    it('should not recompile a func for an empty scope', () => {
+      const prefix = 'Hi';
+      const impl = () => `${prefix} there`;
+      const tool = new ToolFunc({ name: 'emptyScopeTool', scope: {}, func: impl });
+
+      expect(tool.func).toBe(impl);
+      expect(tool.runSync()).toBe('Hi there');
+    });
+
+    it('should bind `this` of a func through the scope', () => {
+      const scope: any = { this: { secretValue: 7 } };
+      const tool = new ToolFunc({ name: 'thisScopeTool', scope, func: function () { return this.secretValue; } });
+
+      expect(tool.runSync()).toBe(7);
+    });
+
+    it('should keep scope out of the exported data', () => {
+      const tool = new ToolFunc({ name: 'notExportedScope', scope: { secretValue: 42 }, func: '() => secretValue' });
+
+      expect(tool.toObject()).not.toHaveProperty('scope');
     });
 
     it('should return all registered items via ToolFunc.list()', () => {

@@ -104,6 +104,11 @@ lifecycle:
 - **`register()`** runs `setup` (idempotently, once per registration lifetime, after the instance
   is placed in the registry). It can mutate the options object it receives; the keys it touches are
   replayed back onto the instance through the same `initialize`/`assign` pipeline.
+- **`scope` is a compile-time input**: the func is compiled against the tool's `scope` (its keys
+  become closure variables, a `this` key becomes the function's `this`), and those values are captured
+  while it compiles. A `scope` that `setup` provides — through `this.scope` or the options object — is
+  therefore applied *before* the func is compiled, exactly as it was when `setup` still ran in the
+  constructor.
 - **`dispose`** is the exact inverse — its teardown runs when the tool is physically removed (refCount
   hits zero, or `force` is used); its returned promise is tracked and any rejection is logged.
 - **Sync initiates, async awaits**: `unregister()` and `Tools.clear()` are synchronous entry points, so
@@ -763,7 +768,7 @@ A `func` can be provided as a string and is compiled at construction/registratio
 - **Bare expressions are rejected** — a string like `'a + b'` evaluates to a value instead of a function, so it throws a clear error. Use an arrow form instead.
 - **Calling convention** — a string func like `'(a, b) => ...'` is positional, so declare `params` as an array (`[{ name: 'a' }, { name: 'b' }]`) to use `run`/`runSync` with named params, or call it with `runWithPos`/`runWithPosSync`.
 - **Name derivation** — when no `name` is configured, the name is derived from a named function expression (e.g. `'function add(a, b) {...}'` → `add`).
-- **Scope** — the `scope` option provides closure variables: `new ToolFunc({ name: 't', scope: { secret: 42 }, func: '() => secret' })`.
+- **Scope** — the `scope` option provides closure variables: `new ToolFunc({ name: 't', scope: { secret: 42 }, func: '() => secret' })`. It also applies to a *function* value (compiled from its own source, so a method-shorthand source cannot bind a scope and is used as-is), while an empty or absent scope leaves a function value untouched — its lexical closure survives. With the lifecycle ability installed, a `setup` hook may provide the scope too (see [Lifecycle Hooks](#lifecycle-hooks-full-lifecycle-lifecycle-with-setup-and-dispose)).
 
 > **⚠️ Security note:** string funcs are compiled with `new Function`, i.e. arbitrary code execution. Only register strings from trusted sources (e.g. your own persisted data).
 
