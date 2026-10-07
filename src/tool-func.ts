@@ -7,16 +7,22 @@ import { AsyncFeatureBits } from './utils/async-features';
 
 /**
  * Represents the data type of a function parameter as a string (e.g., `'string'`, `'number'`).
+ *
+ * @public
  */
 export type FuncParamType = string
 
 /**
  * Execution context for a tool function.
+ *
+ * @public
  */
 export interface ToolFuncContext {
   /**
    * The entry-point registry class that initiated the call chain.
    * Used for late-binding dependency resolution in hierarchical registries.
+   *
+   * @public
    */
   rootRegistry?: typeof ToolFunc;
 
@@ -25,58 +31,73 @@ export interface ToolFuncContext {
    * - 'early': Always use pre-bound instances from 'depends'.
    * - 'late': Always resolve from rootRegistry (forced polymorphism).
    * - 'auto': Use 'late' if rootRegistry shadows the dependency, else 'early' (Safe Default).
+   *
+   * @public
    */
   binding?: 'early' | 'late' | 'auto';
 
   /**
    * Whether to enable independent execution scope.
    * If true, a temporary instance will be created via Object.create(this) to isolate concurrency.
+   *
+   * @public
    */
   isolated?: boolean;
 
   /**
    * Whether to allow context inheritance/propagation in nested calls.
    * Defaults to true.
+   *
+   * @public
    */
   inheritContext?: boolean;
 
   /**
    * Standard Web AbortSignal for propagating cancellation signals.
+   *
+   * @public
    */
   signal?: AbortSignal;
 
   /**
    * Allows users to extend arbitrary properties.
+   *
+   * @public
    */
   [key: string]: any;
 }
 
 /**
  * Describes a single function parameter, including its name, type, and description.
- * @interface
+ *
+ * @public
  */
 export interface FuncParam {
   /**
    * The name of the parameter.
-   * @type {string}
+   *
+   * @public
    */
   name?: string;
 
   /**
    * The data type of the parameter, represented as a string identifier (e.g., 'string', 'number').
-   * @type {FuncParamType}
+   *
+   * @public
    */
   type?: FuncParamType;
 
   /**
    * Indicates whether the parameter is required.
-   * @type {boolean}
+   *
+   * @public
    */
   required?: boolean;
 
   /**
    * A description of the parameter, explaining its purpose and usage.
-   * @type {string}
+   *
+   * @public
    */
   description?: string;
 }
@@ -85,7 +106,10 @@ export interface FuncParam {
  * A map of function parameters, where each key is the parameter name.
  * The value can be either a detailed `FuncParam` object or a simple type string.
  *
+ * @public
+ *
  * @example
+ * ```ts
  * const params: FuncParams = {
  *   userId: 'string',
  *   profile: {
@@ -93,6 +117,7 @@ export interface FuncParam {
  *     description: 'User profile data'
  *   }
  * };
+ * ```
  */
 export interface FuncParams {
   [name: string]: FuncParam|FuncParamType;
@@ -101,9 +126,11 @@ export interface FuncParams {
 /**
  * Defines the signature for a tool function's implementation.
  *
- * @param {ToolFunc} this - The `this` context is bound to the `ToolFunc` instance.
- * @param {...any[]} params - Variadic arguments passed to the function.
- * @returns {any} The result of the function's execution.
+ * @public
+ *
+ * @param this - The `this` context is bound to the `ToolFunc` instance.
+ * @param params - Variadic arguments passed to the function.
+ * @returns The result of the function's execution.
  */
 export type TFunc = (this:ToolFunc, ...params:any[]) => any
 
@@ -119,27 +146,33 @@ export type TFunc = (this:ToolFunc, ...params:any[]) => any
  *
  * Security note: string funcs are compiled with `new Function`, so only pass
  * strings from trusted sources (e.g. your own persisted data).
+ *
+ * @public
  */
 export type TFuncString = string
 
 /**
  * Base configuration for defining a tool function.
- * @interface
+ *
+ * @public
  */
 export interface BaseFuncItem {
   /**
    * The unique name of the function.
-   * @type {string}
+   *
+   * @public
    */
   name?: string;
   /**
    * Parameter definitions, which can be an object mapping names to definitions or an array for positional parameters.
-   * @type {FuncParams | FuncParam[]}
+   *
+   * @public
    */
   params?: FuncParams | FuncParam[];
   /**
    * The expected return type of the function, described as a string or a JSON schema object.
-   * @type {string | Record<string, any>}
+   *
+   * @public
    */
   result?: string|Record<string, any>;
   /**
@@ -157,12 +190,14 @@ export interface BaseFuncItem {
    * A {@link BaseFuncItem.setup} hook may provide the scope too: it is applied *before* the func is
    * compiled (see the lifecycle ability).
    *
-   * @type {any}
+   * @public
+   *
    */
   scope?: any;
   /**
    * Tags for grouping or filtering functions.
-   * @type {string | string[]}
+   *
+   * @public
    */
   tags?: string|string[];
   /**
@@ -187,8 +222,12 @@ export interface BaseFuncItem {
    * before a string `func` is compiled, and a scope *change* rebuilds it (see
    * {@link BaseFuncItem.scope}).
    *
-   * @param {FuncItem} [options] - The configuration options for the function.
+   * @public
+   *
+   * @param this - The `ToolFunc` instance the hook is bound to.
+   * @param options - The configuration options for the function.
    * @example
+   * ```ts
    * const Tools = makeToolFuncLifecycle(ToolFunc);
    * const myFunc = new Tools({
    *   name: 'myFunc',
@@ -200,7 +239,9 @@ export interface BaseFuncItem {
    * });
    * myFunc.register(); // <- setup runs here, not in the constructor
    * console.log(myFunc.customState); // Outputs: 'configured'
+   * ```
    */
+  setup?(this: ToolFunc, options?: FuncItem): void | Promise<void>;
   /**
    * A lifecycle hook called once when the `ToolFunc` instance is **removed from the registry**,
    * i.e. when the reference count drops to zero or when `unregister` is forced. It is the exact
@@ -217,7 +258,10 @@ export interface BaseFuncItem {
    * ability. Install it once, on the registry class you actually use:
    * `const Tools = makeToolFuncLifecycle(ToolFunc)`.
    *
+   * @public
+   *
    * @example
+   * ```ts
    * const Tools = makeToolFuncLifecycle(ToolFunc);
    * const myFunc = new Tools({
    *   name: 'myFunc',
@@ -227,7 +271,9 @@ export interface BaseFuncItem {
    * });
    * myFunc.register();
    * myFunc.unregister(); // <- dispose runs here
+   * ```
    */
+  dispose?(this: ToolFunc): void | Promise<void>;
   /**
    * A lifecycle hook called once at the **end of every call**, releasing whatever *that call*
    * acquired. It is the call-scoped twin of {@link BaseFuncItem.dispose}: while `dispose` is tied to
@@ -251,7 +297,10 @@ export interface BaseFuncItem {
    * by the `makeToolFuncLifecycle` ability. Install it once, on the registry class you actually use:
    * `const Tools = makeToolFuncLifecycle(ToolFunc)`.
    *
+   * @public
+   *
    * @example
+   * ```ts
    * const Tools = makeToolFuncLifecycle(ToolFunc);
    * const myFunc = new Tools({
    *   name: 'tx',
@@ -261,35 +310,43 @@ export interface BaseFuncItem {
    *   },
    *   cleanup() { return this.tx?.commit() },  // <- runs when the call ends, however it ends
    * });
+   * ```
    */
+  cleanup?(this: ToolFunc): void | Promise<void>;
   /**
    * If true, indicates that this function should be treated as a server-side API.
-   * @type {boolean}
+   *
+   * @public
    */
   isApi?: boolean;
   /**
    * If true, indicates that the function has the *capability* to stream its output.
    * Whether a specific call is streamed is determined by a `stream` property in the runtime parameters.
-   * @type {boolean}
+   *
+   * @public
    */
   stream?: boolean;
   /**
    * Optional aliases for the function name.
-   * @type {string | string[]}
+   *
+   * @public
    */
   alias?: string|string[];
   /**
    * A bitmask representing asynchronous features supported by the function, built from `AsyncFeatureBits`.
    * This allows the system to understand if a function supports capabilities like cancellation or multi-tasking.
-   * @see AsyncFeatureBits from `@src/utils/cancelable-ability.ts`
-   * @type {number}
+   *
+   * @public
+   * @see `AsyncFeatureBits` from `./utils/async-features`
    * @example
+   * ```ts
    * import { AsyncFeatures } from './utils';
    * const func = new ToolFunc({
    *   name: 'cancellableTask',
    *   asyncFeatures: AsyncFeatures.Cancelable | AsyncFeatures.MultiTask,
    *   // ...
    * });
+   * ```
    */
   asyncFeatures?: number;
   /**
@@ -297,8 +354,10 @@ export interface BaseFuncItem {
    * Declaring dependencies ensures that they are automatically registered when this function is registered.
    * This is crucial for building modular functions that rely on each other without needing to manage registration order manually.
    *
-   * @type {{ [name: string]: ToolFunc }}
+   * @public
+   *
    * @example
+   * ```ts
    * const helperFunc = new ToolFunc({ name: 'helper', func: () => 'world' });
    * const mainFunc = new ToolFunc({
    *   name: 'main',
@@ -313,36 +372,43 @@ export interface BaseFuncItem {
    * });
    * // When mainFunc is registered, helperFunc will be registered automatically.
    * mainFunc.register();
+   * ```
    */
   depends?: {[name: string]: ToolFunc};
   /**
    * A detailed description of what the function does.
-   * @type {string}
+   *
+   * @public
    */
   description?: string;
   /**
    * A concise, human-readable title for the function, often used in UI or by AI.
-   * @type {string}
+   *
+   * @public
    */
   title?: string;
 }
 
 /**
  * Extends `BaseFuncItem` to include the actual function implementation.
- * @interface
+ *
+ * @public
  */
 export interface FuncItem extends BaseFuncItem {
   /**
    * The implementation of the tool function.
    * Can be a real function, or a function-expression string (e.g. `'(a, b) => a + b'`)
    * that will be compiled at construction time.
-   * @type {TFunc | TFuncString}
+   *
+   * @public
    */
   func?: TFunc | TFuncString;
 }
 
 /**
  * Options for registering a tool function.
+ *
+ * @public
  */
 export interface RegisterOptions extends FuncItem {
   /**
@@ -350,37 +416,58 @@ export interface RegisterOptions extends FuncItem {
    * - `true`: Allows overwriting an existing function with the same name.
    * - `{ name: true }`: Same as `true`.
    * - `{ alias: true }`: Allows stealing existing aliases from other functions.
+   *
+   * @public
    */
   allowOverride?: boolean | { name?: boolean, alias?: boolean };
 }
 
 /**
  * Options for isolating a ToolFunc registry.
+ *
+ * @public
  */
 export interface ToolFuncRegistryIsolateOptions {
-  /** Whether to isolate the main function registry (default: true). */
+  /**
+   * Whether to isolate the main function registry (default: true).
+   *
+   * @public
+   */
   items?: boolean;
-  /** Whether to isolate the alias map (default: true). */
+  /**
+   * Whether to isolate the alias map (default: true).
+   *
+   * @public
+   */
   aliases?: boolean;
-  /** Whether to isolate the reference counts (default: true). */
+  /**
+   * Whether to isolate the reference counts (default: true).
+   *
+   * @public
+   */
   refCounts?: boolean;
 }
 
 /**
  * Represents a fully-defined tool function where the implementation is mandatory.
- * @interface
+ *
+ * @public
  */
 export interface BaseFunc extends BaseFuncItem {
   /**
    * The actual function implementation.
-   * @param {...any} params - The parameters for the function.
-   * @returns {any} The result of the function.
+   *
+   * @public
+   * @param params - The parameters for the function.
+   * @returns The result of the function.
    */
-  func(...params: any): any;
+  func(...params: any[]): any;
 }
 
 /**
  * A map of registered `ToolFunc` instances, indexed by their names.
+ *
+ * @public
  */
 export interface Funcs {
   [name: string]: ToolFunc
@@ -388,36 +475,58 @@ export interface Funcs {
 
 /**
  * Describes a package of tool functions, including methods for registration and unregistration.
- * @interface
+ *
+ * @public
  */
 export interface ToolFuncPackage {
   /**
    * The name of the tool function package.
-   * @type {string}
+   *
+   * @public
    */
   name: string
   /**
    * A method to register all functions within the package.
-   * @param {any} [data] - Optional data to pass to the registration process.
+   *
+   * @public
+   * @param data - Optional data to pass to the registration process.
    */
   register: (data?: any) => void;
   /**
    * An optional method to unregister all functions within the package.
+   *
+   * @public
    */
   unregister?: () => void;
 }
 
+/**
+ * Declaration merging with the {@link ToolFunc} class: instances (and the class itself) accept
+ * arbitrary extra properties, so a tool may carry custom state or metadata beyond the declared
+ * {@link BaseFuncItem} fields.
+ *
+ * @public
+ */
 export declare interface ToolFunc extends BaseFunc {
+  /**
+   * Any additional property a tool carries: custom state, plugin data, or extra metadata.
+   *
+   * @public
+   */
   [name: string]: any;
 }
 
 /**
  * Options for unregistering a tool function.
+ *
+ * @public
  */
 export interface UnregisterOptions {
   /**
    * If true, force physical removal from the registry even if references exist.
    * Also defaults the `decrement` option to `'all'` if not specified.
+   *
+   * @public
    */
   force?: boolean;
   /**
@@ -425,7 +534,9 @@ export interface UnregisterOptions {
    * - 'once' (default): Decrement the count by one.
    * - 'all': Completely remove the reference count entry.
    *
-   * @default force ? 'all' : 'once'
+   * @public
+   *
+   * @defaultValue force ? 'all' : 'once'
    */
   decrement?: 'once' | 'all';
   /**
@@ -436,6 +547,8 @@ export interface UnregisterOptions {
    *   even after the primary instance is removed from the items list during an override.
    * - 'inherited': Search up the prototype chain and remove the first match found.
    * - 'all': Remove all occurrences found in the entire prototype chain.
+   *
+   * @public
    */
   scope?: 'local' | 'inherited' | 'all';
 }
@@ -444,9 +557,9 @@ export interface UnregisterOptions {
  * Finds the first level in the prototype chain that "owns" the specified name
  * as an own property in its items, aliases, or reference counts.
  *
- * @param {any} target - The starting object/class in the chain.
- * @param {string} name - The name or alias to look for.
- * @returns {any} The object/class that owns the name, or undefined.
+ * @param target - The starting object/class in the chain.
+ * @param name - The name or alias to look for.
+ * @returns The object/class that owns the name, or undefined.
  * @internal
  */
 function findRegistryOwner(target: any, name: string): any {
@@ -470,24 +583,32 @@ function findRegistryOwner(target: any, name: string): any {
  * `ToolFunc` provides a robust framework for defining functions with rich metadata,
  * managing their lifecycle, and executing them through a centralized registry.
  * It is the core component for creating modular and discoverable tools.
- *   * Key Features:
-   * - **Rich Metadata**: Define functions with descriptions, parameters, tags, and titles, making them self-documenting.
-   * - **Static Registry**: A global, static registry (`ToolFunc.items`) allows any part of an application to access and run registered functions by name.
-   * - **Dependency Management**: Use the `depends` property to declare dependencies on other `ToolFunc`s, which are then auto-registered.
-   * - **Aliasing**: Assign multiple names to a function for flexibility.
-   * - **Lifecycle Hooks**: Use the `setup`/`dispose` pair when you install the `makeToolFuncLifecycle` ability.
-     They turn plain hook functions (stored but ignored by a bare `ToolFunc`) into a symmetric
-     lifecycle: `register()` runs `setup`, `dispose()` is the inverse teardown, an async `setup`
-     makes the instance *pending* (gated for `runSync` / `runWithPosSync`), and `dispose` re-arms
-     the hook so an unregister/register cycle rebuilds the acquired state. `cleanup` extends the
-     same symmetry to the *call*: it releases that call's resources once, on success, throw, abort,
-     and after a returned stream ends.
-     @see makeToolFuncLifecycle @see LifecycleAbility @see LifecycleAbilityOptions
+ *
+ * Key Features:
+ * - **Rich Metadata**: Define functions with descriptions, parameters, tags, and titles, making
+ *   them self-documenting.
+ * - **Static Registry**: A global, static registry (`ToolFunc.items`) allows any part of an
+ *   application to access and run registered functions by name.
+ * - **Dependency Management**: Use the `depends` property to declare dependencies on other
+ *   `ToolFunc`s, which are then auto-registered.
+ * - **Aliasing**: Assign multiple names to a function for flexibility.
+ * - **Lifecycle Hooks**: Use the `setup`/`dispose` pair when you install the
+ *   `makeToolFuncLifecycle` ability. They turn plain hook functions (stored but ignored by a bare
+ *   `ToolFunc`) into a symmetric lifecycle: `register()` runs `setup`, `dispose()` is the inverse
+ *   teardown, an async `setup` makes the instance *pending* (gated for `runSync` /
+ *   `runWithPosSync`), and `dispose` re-arms the hook so an unregister/register cycle rebuilds the
+ *   acquired state. `cleanup` extends the same symmetry to the *call*: it releases that call's
+ *   resources once, on success, throw, abort, and after a returned stream ends.
+ *
+ * @public
+   * @see `makeToolFuncLifecycle` (from `@src/utils/lifecycle-ability.ts`)
+   * @see `LifecycleAbility`
+   * @see `LifecycleAbilityOptions`
    * - **Parameter Handling**: Automatically handles both positional and named parameters.
  *
- * @extends AdvancePropertyManager
  *
  * @example
+ * ```ts
  * // 1. Define a helper function
  * const getUser = new ToolFunc({
  *   name: 'getUser',
@@ -524,25 +645,27 @@ function findRegistryOwner(target: any, name: string): any {
  * }
  *
  * main();
+ * ```
  */
 export class ToolFunc extends AdvancePropertyManager {
   /**
    * A static registry of all `ToolFunc` implementations, indexed by their primary name.
-   * @type {Funcs}
+   *
+   * @public
    */
   static items: Funcs = {};
 
   /**
    * A static map of aliases to their corresponding primary function names.
-   * @type {{ [name: string]: string }}
+   *
+   * @public
    */
   static aliases: {[name: string]: string} = {};
 
   /**
    * Tracks the number of active registration holds on each function name.
    * A function is truly removed only when its reference count drops to zero.
-   * @type {{ [name: string]: number }}
-   * @protected
+   * @internal
    */
   protected static _refCounts: {[name: string]: number} = {};
 
@@ -556,21 +679,25 @@ export class ToolFunc extends AdvancePropertyManager {
    * A conventional property to designate a file path for saving the registered `ToolFunc` data.
    * Note: The `ToolFunc` class itself does not implement persistence logic. It is up to the
    * developer to use this path to save and load the `ToolFunc.items` registry if needed.
-   * @type {string}
+   *
+   * @public
    */
   static dataPath: string;
 
   /**
    * The static execution context for proxy classes created via ToolFunc.with().
-   * @type {ToolFuncContext}
+   *
+   * @public
    */
   static ctx?: ToolFuncContext;
 
   /**
    * Returns a static proxy with the provided context.
    *
-   * @param {ToolFuncContext} ctx - The context to use.
-   * @returns {typeof ToolFunc} A static proxy of ToolFunc class.
+   * @public
+   *
+   * @param ctx - The context to use.
+   * @returns A static proxy of ToolFunc class.
    */
   static with(ctx: ToolFuncContext): typeof ToolFunc {
     const proxy = Object.create(this);
@@ -581,9 +708,9 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Internal helper to prepare the execution context, maintaining the prototype chain.
    *
-   * @param {ToolFuncContext} [parentCtx] - The parent context to inherit from.
-   * @param {ToolFuncContext} [ctx] - The new context properties to apply.
-   * @returns {ToolFuncContext} The merged context.
+   * @param parentCtx - The parent context to inherit from.
+   * @param ctx - The new context properties to apply.
+   * @returns The merged context.
    * @internal
    *
    * DANGER - DO NOT "OPTIMIZE" UNLESS YOU UNDERSTAND:
@@ -617,8 +744,10 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Returns an isolated instance with the provided context.
    *
-   * @param {ToolFuncContext} ctx - The context to use.
-   * @returns {this} An isolated ToolFunc instance.
+   * @public
+   *
+   * @param ctx - The context to use.
+   * @returns An isolated ToolFunc instance.
    */
   with(ctx: ToolFuncContext): this {
     const runner = Object.create(this);
@@ -629,13 +758,17 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * The execution context for the current function call.
    * Only available when isolated execution is enabled.
+   *
+   * @public
    */
   ctx?: ToolFuncContext;
 
   /**
    * Retrieves a registered function by its name or alias.
-   * @param {string} name - The name or alias of the function to retrieve.
-   * @returns {ToolFunc | undefined} The `ToolFunc` instance if found, otherwise `undefined`.
+   *
+   * @public
+   * @param name - The name or alias of the function to retrieve.
+   * @returns The `ToolFunc` instance if found, otherwise `undefined`.
    */
   static get(name: string) {
     let result = this.items[name];
@@ -647,7 +780,9 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Returns the complete map of all registered functions.
-   * @returns {Funcs} The map of `ToolFunc` instances.
+   *
+   * @public
+   * @returns The map of `ToolFunc` instances.
    */
   static list() {
     return this.items
@@ -655,8 +790,10 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Finds the first registered function that has a specific tag.
-   * @param {string} tagName - The tag to search for.
-   * @returns {ToolFunc | undefined} The first matching `ToolFunc` instance, or `undefined` if none is found.
+   *
+   * @public
+   * @param tagName - The tag to search for.
+   * @returns The first matching `ToolFunc` instance, or `undefined` if none is found.
    */
   static getByTag(tagName: string) {
     let result: ToolFunc|undefined;
@@ -681,8 +818,10 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Retrieves all registered functions that have a specific tag.
-   * @param {string} tagName - The tag to search for.
-   * @returns {ToolFunc[]} An array of matching `ToolFunc` instances.
+   *
+   * @public
+   * @param tagName - The tag to search for.
+   * @returns An array of matching `ToolFunc` instances.
    */
   static getAllByTag(tagName: string) {
     let result: ToolFunc[] = [];
@@ -707,8 +846,10 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Checks if any registered function has a specific asynchronous feature.
-   * @param {AsyncFeatureBits} feature - The async feature bit to check for.
-   * @returns {boolean} `true` if the feature is present in any function, otherwise `false`.
+   *
+   * @public
+   * @param feature - The async feature bit to check for.
+   * @returns `true` if the feature is present in any function, otherwise `false`.
    */
   static hasAsyncFeature(feature: AsyncFeatureBits) {
     const proto = this.prototype
@@ -723,11 +864,13 @@ export class ToolFunc extends AdvancePropertyManager {
    * Note: This method returns a `Promise` if the underlying function is asynchronous,
    * otherwise it may return the result synchronously.
    *
-   * @param {string} name - The name of the function to run.
-   * @param {any} [params] - The parameters object for the function.
-   * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
-   * @throws {NotFoundError} If the function with the given name is not found.
+   * @public
+   *
+   * @param name - The name of the function to run.
+   * @param params - The parameters object for the function.
+   * @param ctx - The execution context.
+   * @returns A promise or the direct result of the function's execution.
+   * @throws `NotFoundError` If the function with the given name is not found.
    */
   static run(name: string, params?: any, ctx?: ToolFuncContext): Promise<any>|any {
     const func = this.get(name)
@@ -741,11 +884,13 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Synchronously executes a registered function by name with named parameters.
-   * @param {string} name - The name of the function to run.
-   * @param {any} [params] - The parameters object for the function.
-   * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {any} The result of the function's execution.
-   * @throws {NotFoundError} If the function with the given name is not found.
+   *
+   * @public
+   * @param name - The name of the function to run.
+   * @param params - The parameters object for the function.
+   * @param ctx - The execution context.
+   * @returns The result of the function's execution.
+   * @throws `NotFoundError` If the function with the given name is not found.
    */
   static runSync(name: string, params?: any, ctx?: ToolFuncContext) {
     const func = this.get(name)
@@ -760,8 +905,10 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Retrieves a bound, runnable function reference for a registered function.
    * This reference is suitable for execution with an object of named parameters.
-   * @param {string} name - The name of the function.
-   * @returns {Function | undefined} A bound function reference, or `undefined` if not found.
+   *
+   * @public
+   * @param name - The name of the function.
+   * @returns A bound function reference, or `undefined` if not found.
    */
   static getFunc(name: string): Function | undefined {
     const func = this.get(name)
@@ -774,10 +921,12 @@ export class ToolFunc extends AdvancePropertyManager {
    * Note: This method returns a `Promise` if the underlying function is asynchronous,
    * otherwise it may return the result synchronously.
    *
-   * @param {string} name - The name of the function to run.
-   * @param {...any[]} params - Positional arguments to pass to the function.
-   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
-   * @throws {NotFoundError} If the function with the given name is not found.
+   * @public
+   *
+   * @param name - The name of the function to run.
+   * @param params - Positional arguments to pass to the function.
+   * @returns A promise or the direct result of the function's execution.
+   * @throws `NotFoundError` If the function with the given name is not found.
    */
   static runWithPos(name: string, ...params: any[]): Promise<any>|any {
     const func = this.get(name)
@@ -790,10 +939,12 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Synchronously executes a function using positional arguments.
-   * @param {string} name - The name of the function to run.
-   * @param {...any[]} params - Positional arguments to pass to the function.
-   * @returns {any} The result of the function's execution.
-   * @throws {NotFoundError} If the function with the given name is not found.
+   *
+   * @public
+   * @param name - The name of the function to run.
+   * @param params - Positional arguments to pass to the function.
+   * @returns The result of the function's execution.
+   * @throws `NotFoundError` If the function with the given name is not found.
    */
   static runWithPosSync(name: string, ...params: any[]) {
     const func = this.get(name)
@@ -807,8 +958,10 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Retrieves a bound, runnable function reference for a registered function.
    * This reference is suitable for execution with positional arguments.
-   * @param {string} name - The name of the function.
-   * @returns {Function | undefined} A bound function reference, or `undefined` if not found.
+   *
+   * @public
+   * @param name - The name of the function.
+   * @returns A bound function reference, or `undefined` if not found.
    */
   static getFuncWithPos(name: string) {
     const func = this.get(name)
@@ -817,12 +970,11 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Internal helper to normalize arguments from various input patterns.
-   * Priority: name (arg1) > options (arg2).
+   * Priority: name (arg1) \> options (arg2).
    *
-   * @param {ToolFunc | string | Function | FuncItem} name - Primary config.
-   * @param {FuncItem | any} [options] - Default config.
-   * @returns {any} Normalized options object.
-   * @protected
+   * @param name - Primary config.
+   * @param options - Default config.
+   * @returns Normalized options object.
    * @internal
    */
   protected static _normalizeArguments(name: ToolFunc | string | Function | FuncItem, options?: FuncItem | any): any {
@@ -873,7 +1025,9 @@ export class ToolFunc extends AdvancePropertyManager {
    * 2. Parent tools remain accessible via the prototype chain (read-only) unless shadowed.
    * 3. Reference counting is isolated, enabling clean per-layer lifecycle management.
    *
-   * @param {ToolFuncRegistryIsolateOptions} [options] - Options to selectively isolate specific maps (items, aliases, refCounts).
+   * @public
+   *
+   * @param options - Options to selectively isolate specific maps (items, aliases, refCounts).
    */
   static isolateRegistry(options: ToolFuncRegistryIsolateOptions = { items: true, aliases: true, refCounts: true }) {
     const Parent = Object.getPrototypeOf(this) as typeof ToolFunc;
@@ -904,6 +1058,8 @@ export class ToolFunc extends AdvancePropertyManager {
    * cannot be waited for here, and since a dependency's release is chained behind its holder's, an
    * asynchronous teardown is still in flight while the next tool goes down. Use `clearAsync()`
    * (installed by the lifecycle ability) when the layer may hold asynchronous teardown.
+   *
+   * @public
    */
   static clear() {
     // Release what this layer owns *before* dropping the tables: a registered tool holds real
@@ -949,10 +1105,10 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Analyzes the registration context and determines the appropriate action.
    *
-   * @param {string} name - The function name to register.
-   * @param {any} override - Override options.
-   * @returns {'create' | 'shadow' | 'replace' | 'increment'} The determined registration action.
-   * @protected
+   * @param name - The function name to register.
+   * @param override - Override options.
+   * @returns The determined registration action.
+   * @internal
    */
   protected static _getRegistrationAction(name: string, override: { name?: boolean }): 'create' | 'shadow' | 'replace' | 'increment' {
     const owner = findRegistryOwner(this, name);
@@ -984,9 +1140,8 @@ export class ToolFunc extends AdvancePropertyManager {
    * '_stack' property (used by recursive dependency registration). It is extracted and
    * removed so it never reaches instance state or serialization.
    *
-   * @param {any} options - The normalized options object (may be a ToolFunc instance).
-   * @returns {Set<string> | undefined} The extracted stack, if any.
-   * @protected
+   * @param options - The normalized options object (may be a ToolFunc instance).
+   * @returns The extracted stack, if any.
    * @internal
    */
   protected static _extractStack(options: any): Set<string> | undefined {
@@ -1001,10 +1156,9 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Normalizes the arguments passed to the `register` method into a unified `RegisterOptions` object.
    *
-   * @param {ToolFunc | string | Function | RegisterOptions} name - The primary identification or implementation.
-   * @param {RegisterOptions} [options] - Additional or overriding configuration.
-   * @returns {RegisterOptions} A normalized options object ready for registration.
-   * @protected
+   * @param name - The primary identification or implementation.
+   * @param options - Additional or overriding configuration.
+   * @returns A normalized options object ready for registration.
    * @internal
    */
   protected static _normalizeRegisterArguments(name: ToolFunc | string | Function | RegisterOptions, options?: RegisterOptions): RegisterOptions {
@@ -1031,17 +1185,20 @@ export class ToolFunc extends AdvancePropertyManager {
    * Reference counts are precisely managed (count=1 for back-edges) to prevent memory leaks
    * and enable clean group unregistration.
    *
-   * @param {ToolFunc|string|Function|RegisterOptions} name - The tool instance, function, or name to register.
-   * @param {RegisterOptions|ToolFunc|TFuncString} [options] - Configuration or implementation for the tool.
+   * @public
+   *
+   * @param name - The tool instance, function, or name to register.
+   * @param options - Configuration or implementation for the tool.
    *   The internal cycle-detection stack (a `Set`) may also be carried as `_stack` — either in this
    *   options argument or in the first-arg config object (used by recursive dependency registration);
    *   it is consumed and removed during normalization, never reaching the instance.
    *   With the `(name, funcString, config)` form, an optional third `config` argument is accepted
    *   that provides params/metadata defaults for the function-expression string.
-   * @returns {ToolFunc | false} The registered ToolFunc instance on success (creation, shadowing, or override),
+   * @returns The registered ToolFunc instance on success (creation, shadowing, or override),
    * or `false` if registration was ignored (e.g., ref-count increment only).
    *
    * @example
+   * ```ts
    * // 1. Registering with explicit name and function
    * ToolFunc.register('add', { func: (a, b) => a + b });
    *
@@ -1060,8 +1217,8 @@ export class ToolFunc extends AdvancePropertyManager {
    *
    * // 6. Registering a named function expression without an explicit name
    * ToolFunc.register({ func: 'function greet(name) { return `Hi ${name}`; }' });
-   *
-   * @throws {Error} If name is missing, or if an alias collision occurs without permission.
+   * ```
+   * @throws `Error` If name is missing, or if an alias collision occurs without permission.
    */
   static register(name: string, options: RegisterOptions): boolean|ToolFunc
   static register(func: Function, options: RegisterOptions): boolean|ToolFunc
@@ -1176,15 +1333,19 @@ export class ToolFunc extends AdvancePropertyManager {
    * This method supports hierarchical unregistration. If a function's reference count
    * reaches zero, it is physically removed from the registry and its dependencies are released.
    *
-   * @param {string | ToolFunc} target - The name, alias, or implementation instance.
-   * @param {UnregisterOptions | boolean} [options] - Options or a simple 'force' boolean flag.
-   * @param {boolean} [options.force=false] - If true, removes the tool immediately.
-   * @param {'once'|'all'} [options.decrement='once'] - How many registration holds to release.
-   * @param {'local'|'inherited'|'all'} [options.scope='local'] - Hierarchical search scope:
-   *   - `'local'`: (Default) Only removes if owned by current registry layer.
-   *   - `'inherited'`: Searches up and removes the first matching tool found in parents.
-   *   - `'all'`: Removes from the current registry and ALL its parent registries.
-   * @returns {ToolFunc | undefined} The unregistered ToolFunc instance, or `undefined` if not found.
+   * @public
+   *
+   * @param target - The name, alias, or implementation instance.
+   * @param options - Unregistration options, or a boolean shorthand for `{ force: true }`.
+   *   Recognized fields:
+   *   - `force`: If true, removes the tool immediately, ignoring the reference count
+   *     (default: `false`).
+   *   - `decrement`: How many registration holds to release — `'once'` (default) or `'all'`.
+   *   - `scope`: Hierarchical search scope —
+   *     `'local'` (default) only removes a tool owned by the current registry layer;
+   *     `'inherited'` searches up and removes the first match found in parents;
+   *     `'all'` removes every occurrence in the whole prototype chain.
+   * @returns The unregistered ToolFunc instance, or `undefined` if not found.
    */
   static unregister(target: string | ToolFunc, options?: UnregisterOptions | boolean): ToolFunc|undefined {
     let force = false
@@ -1235,7 +1396,7 @@ export class ToolFunc extends AdvancePropertyManager {
      * unregistering items belonging to its parent.
      *
      * Why check _refCounts for 'local' scope?
-     * During a 'force' unregistration or override of circular dependencies (e.g., A <-> B),
+     * During a 'force' unregistration or override of circular dependencies (e.g., A \<-\> B),
      * an item (A) is physically removed from 'this.items' EARLY to prevent re-entrancy.
      * However, its "ghost state" (the reference count) must remain accessible to the
      * recursive cleanup process (_releaseDependencies) so that subsequent calls to
@@ -1307,6 +1468,8 @@ export class ToolFunc extends AdvancePropertyManager {
    *
    * Only *live* tools are considered, so a dependency owned by a parent layer never keeps a
    * locally-owned tool waiting — that tool's removal releases its own hold and stops there.
+   *
+   * @internal
    */
   protected static _isStillHeld(name: string): boolean {
     for (const key of Object.keys(this.items || {})) {
@@ -1327,6 +1490,8 @@ export class ToolFunc extends AdvancePropertyManager {
    * directions correct: declare a dependency before the tool that uses it, and every dependency
    * outlives everything that depends on it. Declaration order is also the acquisition order, so a
    * single convention covers both ends of the lifetime.
+   *
+   * @internal
    */
   protected static _dependencyReleaseOrder(inst: ToolFunc): ToolFunc[] {
     const depends = inst.depends
@@ -1349,6 +1514,8 @@ export class ToolFunc extends AdvancePropertyManager {
    * outlive everything that uses it, so a dependent's `dispose` still finds a live dependency to
    * give back what its `setup` took. The lifecycle ability overrides this to drive the `dispose`
    * hook — and to wait for an asynchronous teardown — between the two steps.
+   *
+   * @internal
    */
   protected static _releaseInstance(inst: ToolFunc) {
     this._releaseDependencies(inst)
@@ -1360,12 +1527,14 @@ export class ToolFunc extends AdvancePropertyManager {
    * If a named function is provided as the first argument (or in `options.func`),
    * and no name is explicitly provided, the instance will automatically inherit the function's name.
    *
-   * @param {string | Function | FuncItem} name - Can be a function name, a function implementation, or a configuration object.
-   * @param {FuncItem | any} [options={}] - Configuration options if not provided in the first argument.
+   * @public
+   *
+   * @param name - Can be a function name, a function implementation, or a configuration object.
+   * @param options - Configuration options if not provided in the first argument.
    *   Can also be a function-expression string (e.g. `'(a, b) => a + b'`) for the `(name, funcString)` form.
    *   An internal `_stack` property (a `Set`, used for cycle detection during registration) is
    *   consumed and removed here so it never becomes instance state.
-   * @param {FuncItem | any} [config] - Optional config object, only used with the `(name, funcString, config)` form.
+   * @param config - Optional config object, only used with the `(name, funcString, config)` form.
    */
   constructor(name: string|Function|FuncItem, options: FuncItem|any = {}, config?: FuncItem|any) {
     super()
@@ -1385,15 +1554,14 @@ export class ToolFunc extends AdvancePropertyManager {
     (this.constructor as typeof ToolFunc)._extractStack(options);
 
     this.name = options.name as string
-    /**
-     * _origin always points to the Root ToolFunc instance (the one created via 'new').
-     * RATIONALE:
-     * 1. State Persistence: Concurrent states like semaphores and task pools MUST stay on the root.
-     * 2. Closure Binding: Using '() => this' in the constructor locks the reference to the root instance,
-     *    ensuring that even deep shadow chains (Object.create) can always trace back to the same origin.
-     * 3. Vitest Compatibility: The no-op setter and 'configurable: true' prevent TypeError during
-     *    Vitest's deep diffing/proxying processes when a test fails.
-     */
+    // _origin always points to the Root ToolFunc instance (the one created via 'new').
+    // RATIONALE:
+    // 1. State Persistence: Concurrent states like semaphores and task pools MUST stay on the root.
+    // 2. Closure Binding: Using '() => this' in the constructor locks the reference to the root
+    //    instance, ensuring that even deep shadow chains (Object.create) can always trace back
+    //    to the same origin.
+    // 3. Vitest Compatibility: The no-op setter and 'configurable: true' prevent TypeError during
+    //    Vitest's deep diffing/proxying processes when a test fails.
     Object.defineProperty(this, '_origin', {
       get: () => this,
       set: (v) => {},
@@ -1415,7 +1583,9 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Registers the current `ToolFunc` instance into the static registry.
    * Also registers any declared dependencies.
-   * @returns {boolean | ToolFunc} The instance itself upon successful registration, or `false` if it already exists.
+   *
+   * @public
+   * @returns The instance itself upon successful registration, or `false` if it already exists.
    */
   register() {
     const Tools = (this.constructor as unknown as typeof ToolFunc)
@@ -1424,8 +1594,10 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Removes the current `ToolFunc` instance from the static registry.
-   * @param {UnregisterOptions | boolean} [options] - Unregistration options or a boolean force flag.
-   * @returns {ToolFunc | undefined} The instance that was unregistered.
+   *
+   * @public
+   * @param options - Unregistration options or a boolean force flag.
+   * @returns The instance that was unregistered.
    */
   unregister(options?: UnregisterOptions | boolean) {
     return (this.constructor as any).unregister(this.name, options)
@@ -1434,8 +1606,10 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Converts an array of positional arguments into a named parameters object.
    * This is used internally to support functions defined with named parameters.
-   * @param {any[]} params - An array of positional arguments.
-   * @returns {any[]} An array containing a single parameters object.
+   *
+   * @public
+   * @param params - An array of positional arguments.
+   * @returns An array containing a single parameters object.
    */
   arr2ObjParams(params: any[]) {
     if (this.params && (params.length > 1 || Array.isArray(params[0]) || (params[0] && typeof params[0] !== 'object'))) {
@@ -1453,8 +1627,10 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Converts a named parameters object into an array of positional arguments.
    * This is used for functions defined with positional parameters.
-   * @param {any} [params] - A named parameters object.
-   * @returns {any[]} An array of positional arguments.
+   *
+   * @public
+   * @param params - A named parameters object.
+   * @returns An array of positional arguments.
    */
   obj2ArrParams(params?: any): any[] {
     const result: any[] = []
@@ -1478,10 +1654,10 @@ export class ToolFunc extends AdvancePropertyManager {
    * `runWithPosSync` out of a tool that is still *pending* across stacks (async `setup` in flight)
    * and refuses a strictly-paired tool (one with a `dispose` hook) that has not been `register()`ed.
    *
-   * @param {any} [params] - The runtime parameters for the function call.
-   * @param {ToolFuncContext} [ctx] - The optional execution context provided by the user for this specific call (e.g., via `runSync(params, ctx)`).
-   * @returns {boolean} `true` if a shadow instance should be created, otherwise `false`.
-   * @protected
+   * @param params - The runtime parameters for the function call.
+   * @param ctx - The optional execution context provided by the user for this specific call (e.g., via `runSync(params, ctx)`).
+   * @returns `true` if a shadow instance should be created, otherwise `false`.
+   * @internal
    */
   protected _shouldIsolate(params?: any, ctx?: ToolFuncContext): boolean {
     if (ctx?.isolated !== undefined) return ctx.isolated;
@@ -1498,6 +1674,8 @@ export class ToolFunc extends AdvancePropertyManager {
    * NOTE: We MUST use 'this._prepareContext' (instance path) instead of
    * 'Static._prepareContext' to allow AOP plugins (like CancelableAbility)
    * to hook into context preparation via method overloading ($_prepareContext).
+   *
+   * @internal
    */
   protected _prepareContext(params?: any, ctx?: ToolFuncContext): ToolFuncContext {
     return (this.constructor as typeof ToolFunc)._prepareContext(this.ctx, ctx);
@@ -1505,9 +1683,11 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Executes the function synchronously with a named parameters object.
-   * @param {any} [params] - The parameters object for the function.
-   * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {any} The result of the function execution.
+   *
+   * @public
+   * @param params - The parameters object for the function.
+   * @param ctx - The execution context.
+   * @returns The result of the function execution.
    * @throws Will throw an error if an array of parameters is passed to a function that expects an object.
    */
   runSync(params?: any, ctx?: ToolFuncContext) {
@@ -1536,9 +1716,11 @@ export class ToolFunc extends AdvancePropertyManager {
    * Note: This method returns a `Promise` if the underlying function is asynchronous,
    * otherwise it may return the result synchronously.
    *
-   * @param {any} [params] - The parameters object for the function.
-   * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
+   * @public
+   *
+   * @param params - The parameters object for the function.
+   * @param ctx - The execution context.
+   * @returns A promise or the direct result of the function's execution.
    */
   run(params?: any, ctx?: ToolFuncContext): Promise<any>|any {
     return this.runSync(params, ctx)
@@ -1550,10 +1732,12 @@ export class ToolFunc extends AdvancePropertyManager {
    * Note: This method returns a `Promise` if the underlying function is asynchronous,
    * otherwise it may return the result synchronously.
    *
-   * @param {string} name - The name of the target function to run.
-   * @param {any} [params] - Optional parameters to pass to the function.
-   * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
+   * @public
+   *
+   * @param name - The name of the target function to run.
+   * @param params - Optional parameters to pass to the function.
+   * @param ctx - The execution context.
+   * @returns A promise or the direct result of the function's execution.
    */
   runAs(name:string, params?: any, ctx?: ToolFuncContext): Promise<any>|any {
     const { func, context } = this._resolveAs(name, params, ctx)
@@ -1577,11 +1761,13 @@ export class ToolFunc extends AdvancePropertyManager {
    * - `'late'`: **Forced Polymorphism**. Always resolves from the `rootRegistry`,
    *   ignoring the definer's environment.
    *
-   * @param {string} name - The name or alias of the target function to run.
-   * @param {any} [params] - Optional parameters to pass to the target function.
-   * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {any} The result of the target function execution.
-   * @throws {NotFoundError} If the target function cannot be found in the current lineage.
+   * @public
+   *
+   * @param name - The name or alias of the target function to run.
+   * @param params - Optional parameters to pass to the target function.
+   * @param ctx - The execution context.
+   * @returns The result of the target function execution.
+   * @throws `NotFoundError` If the target function cannot be found in the current lineage.
    */
   runAsSync(name:string, params?: any, ctx?: ToolFuncContext) {
     const { func, context } = this._resolveAs(name, params, ctx)
@@ -1595,12 +1781,12 @@ export class ToolFunc extends AdvancePropertyManager {
    * lookup and the same binding strategy, they only differ in which entry point of the resolved
    * tool they hand the call to (`run` vs `runSync`).
    *
-   * @param {string} name - The name or alias of the target function.
-   * @param {any} [params] - Optional parameters to pass to the target function.
-   * @param {ToolFuncContext} [ctx] - The execution context.
-   * @returns {{ func: ToolFunc, context: ToolFuncContext }} The resolved instance and context.
-   * @throws {NotFoundError} If the target function cannot be found in the current lineage.
-   * @protected
+   * @param name - The name or alias of the target function.
+   * @param params - Optional parameters to pass to the target function.
+   * @param ctx - The execution context.
+   * @returns The resolved instance and context.
+   * @throws `NotFoundError` If the target function cannot be found in the current lineage.
+   * @internal
    */
   protected _resolveAs(name: string, params?: any, ctx?: ToolFuncContext): { func: ToolFunc, context: ToolFuncContext } {
     // 1. Prepare context. Ensure it inherits control flags from current instance context.
@@ -1651,8 +1837,10 @@ export class ToolFunc extends AdvancePropertyManager {
    * Gets a bound function reference for execution with named parameters.
    * If a name is provided, it retrieves a different function from the registry.
    * Otherwise, it returns a bound version of this instance's `runSync`.
-   * @param {string} [name] - Optional name of the function to retrieve.
-   * @returns {Function | undefined} A function reference or `undefined` if not found.
+   *
+   * @public
+   * @param name - Optional name of the function to retrieve.
+   * @returns A function reference or `undefined` if not found.
    */
   getFunc(name?: string): Function | undefined {
     const result: Function | undefined = name ? (this.constructor as typeof ToolFunc).getFunc(name) : (params: any, ctx?: ToolFuncContext) => this.runSync(params, ctx)
@@ -1662,8 +1850,10 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Executes the function synchronously using positional arguments.
    * If the function expects named parameters, it converts the arguments automatically.
-   * @param {...any[]} params - Positional arguments passed to the function.
-   * @returns {any} The result of the function execution.
+   *
+   * @public
+   * @param params - Positional arguments passed to the function.
+   * @returns The result of the function execution.
    */
   runWithPosSync(...params:any[]) {
     if (this._shouldIsolate(params)) {
@@ -1681,9 +1871,11 @@ export class ToolFunc extends AdvancePropertyManager {
   /**
    * Synchronously executes another function by name using positional arguments.
    * This is a convenience wrapper around the static `runWithPosSync()` method.
-   * @param {string} name - The name of the target function to run.
-   * @param {...any[]} params - Positional arguments to pass to the function.
-   * @returns {any} The result of the function execution.
+   *
+   * @public
+   * @param name - The name of the target function to run.
+   * @param params - Positional arguments to pass to the function.
+   * @returns The result of the function execution.
    */
   runWithPosAsSync(name: string, ...params: any[]) {
     const func = (this.constructor as typeof ToolFunc).get(name)
@@ -1699,8 +1891,10 @@ export class ToolFunc extends AdvancePropertyManager {
    * Note: This method returns a `Promise` if the underlying function is asynchronous,
    * otherwise it may return the result synchronously.
    *
-   * @param {...any[]} params - Positional arguments passed to the function.
-   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
+   * @public
+   *
+   * @param params - Positional arguments passed to the function.
+   * @returns A promise or the direct result of the function's execution.
    */
   runWithPos(...params: any[]): Promise<any>|any {
     return this.runWithPosSync(...params)
@@ -1712,9 +1906,11 @@ export class ToolFunc extends AdvancePropertyManager {
    * Note: This method returns a `Promise` if the underlying function is asynchronous,
    * otherwise it may return the result synchronously.
    *
-   * @param {string} name - The name of the target function to run.
-   * @param {...any[]} params - Positional arguments to pass to the function.
-   * @returns {Promise<any>|any} A promise or the direct result of the function's execution.
+   * @public
+   *
+   * @param name - The name of the target function to run.
+   * @param params - Positional arguments to pass to the function.
+   * @returns A promise or the direct result of the function's execution.
    */
   runWithPosAs(name:string, ...params: any[]): Promise<any>|any {
     return this.runWithPosAsSync(name, ...params)
@@ -1724,8 +1920,10 @@ export class ToolFunc extends AdvancePropertyManager {
    * Gets a bound function reference suitable for positional argument execution.
    * If a name is provided, it retrieves a different function from the registry.
    * Otherwise, it returns a bound version of this instance's `runWithPosSync`.
-   * @param {string} [name] - Optional name of the function to retrieve.
-   * @returns {Function | undefined} A function reference or `undefined` if not found.
+   *
+   * @public
+   * @param name - Optional name of the function to retrieve.
+   * @returns A function reference or `undefined` if not found.
    */
   getFuncWithPos(name?: string) {
     const result = name ? (this.constructor as any).getFuncWithPos(name) : (...args: any[]) => this.runWithPosSync(...args)
@@ -1734,8 +1932,10 @@ export class ToolFunc extends AdvancePropertyManager {
 
   /**
    * Checks if the current function instance supports a specific async feature.
-   * @param {AsyncFeatureBits} feature - The async feature bit to check for.
-   * @returns {boolean} `true` if the feature is supported, otherwise `false`.
+   *
+   * @public
+   * @param feature - The async feature bit to check for.
+   * @returns `true` if the feature is supported, otherwise `false`.
    */
   hasAsyncFeature(feature: AsyncFeatureBits) {
     let features = this.asyncFeatures ?? 0
@@ -1752,8 +1952,10 @@ export class ToolFunc extends AdvancePropertyManager {
    * 3. If both are true, the method returns the value of the `stream` property from the runtime `params` object.
    * Otherwise, it returns the function's static `stream` capability.
    *
-   * @param {any} params - The runtime parameters passed to the function call.
-   * @returns {boolean | undefined} `true` if the call should be streamed, `false` or `undefined` otherwise.
+   * @public
+   *
+   * @param params - The runtime parameters passed to the function call.
+   * @returns `true` if the call should be streamed, `false` or `undefined` otherwise.
    */
   isStream(params: any) {
     let result = this.stream
