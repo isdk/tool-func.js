@@ -102,15 +102,17 @@ console.log(message); // 输出: "你好, 张三!"
 
 - **`register()`** 会运行 `setup`（幂等的，每个注册生命周期仅运行一次，发生在实例被放入注册表之后）。
   它可以修改收到的 options 对象；它所触碰的键会通过同一条 `initialize` / `assign` 流水线被回放到实例上。
-- **`dispose`** 是其准确逆操作：当工具被真正移除（引用计数归零，或使用了 `force`）时，它的清理逻辑会运行。
-  因为同步的 `unregister()` 无法等待它，返回的 Promise 会被追踪，拒绝异常会被记录而非抛出；
-  请使用 **`unregisterAsync()`** 来等待该清理并查看真实错误。
+- **`dispose`** 是其准确逆操作：当工具被真正移除（引用计数归零，或使用了 `force`）时，它的清理逻辑会运行；
+  返回的 Promise 会被追踪，拒绝异常会被记录而非抛出。
+- **同步只发起，异步才等待**：`unregister()` 与 `Tools.clear()` 是同步入口，因此只能**发起** teardown；
+  `unregisterAsync()` 与 `Tools.clearAsync()` 会等到结束 —— 工具自身的 `dispose` **以及**串行排在它之后的
+  依赖释放。所以在 `clear()` 下，依赖的异步销毁会与持有者的重叠；`clearAsync()` 正是为此存在，它会把
+  整层的失败聚合为一个 `AggregateError`。
 - **销毁顺序**：工具会在它所声明的依赖**之前**被销毁，而这些依赖按声明顺序**倒序**释放。
   依赖必须比所有使用它的东西活得更久，所以持有者的 `dispose` 仍能看到活着的依赖，把 `setup` 取走的东西还回去
   —— 先停掉定时器，再关掉它查询的连接池。请按依赖顺序声明（被依赖者写在使用者之前）：
-  这一条约定同时让获取顺序与释放顺序（其倒序）都正确。`unregisterAsync()` 会等待整条链
-  —— 工具自身的 `dispose` **以及**串行排在它之后的依赖释放；`Tools.clear()` 同样会为这一层所拥有的每个工具
-  跑完整 teardown，而不再只是把表换掉。
+  这一条约定同时让获取顺序与释放顺序（其倒序）都正确。`Tools.clear()` / `Tools.clearAsync()` 会用同一顺序
+  释放这一层所拥有的每个工具，而不再只是把表换掉。
 - **重置（re-arm）**：一旦 `dispose` 成功，整个生命周期都会为**下一次**注册重新准备好，所以每一次
   unregister / register 循环都会重新运行 `setup`，并在下一个循环里再次被销毁。带有 `dispose` 钩子的实例
   是严格配对的：在调用 `register()` 之前就运行它，会被当作一个错误。
@@ -124,7 +126,7 @@ console.log(message); // 输出: "你好, 张三!"
 `isSetupDone()` / `isSetupPending()`、`registerAsync()` / `unregisterAsync()`，
 以及 `ready` 和 `disposed` 这两个 Promise。
 **静态侧接口**：`Tools.registerAsync(...)`、`Tools.unregisterAsync(...)`、
-`Tools.createAsync(...)`、`Tools.awaitReady(name)` 和 `Tools.whenAllReady()`。
+`Tools.createAsync(...)`、`Tools.clearAsync()`、`Tools.awaitReady(name)` 和 `Tools.whenAllReady()`。
 
 ```typescript
 import { ToolFunc, makeToolFuncLifecycle } from '@isdk/tool-func';

@@ -306,7 +306,9 @@ export declare interface LifecycleAbility {
  * Turns `setup`/`dispose` into a real, symmetric lifecycle driven by the registry:
  *
  * - `register()` runs `setup` (idempotently, once per registration lifetime)
- * - `unregister()` runs `dispose` when the tool is physically removed (reference count hit zero)
+ * - `unregister()` runs `dispose` when the tool is physically removed (reference count hit zero);
+ *   the tool goes before the dependencies it declares, and those are released last-declared first
+ * - `clear()` / `clearAsync()` release everything the layer owns through that same lifecycle
  * - `dispose` re-arms `setup`, so an unregister/register cycle rebuilds whatever was released
  * - an async `setup` makes the instance *pending*: `run()` awaits it, `runSync()` refuses it
  *
@@ -500,6 +502,55 @@ export class LifecycleAbility {
     if (lc.teardownPromise) await lc.teardownPromise.catch(() => {})
     if (lc.disposeError) throw lc.disposeError
     return inst
+  }
+
+  /**
+   * The asynchronous `ToolFunc.clear`, awaited: releases everything this layer owns in reverse
+   * dependency order, waiting for each teardown to settle before the next one starts.
+   *
+   * The synchronous `clear()` cannot do that. It releases in the same order, but it has no way to
+   * learn that a `dispose` is still in flight — that bookkeeping lives here, in the lifecycle — so
+   * with an asynchronous teardown a dependency is dropped as soon as its holder leaves the
+   * registry, overlapping its holder's `dispose` instead of following it.
+   *
+   * Every owned tool is released even when some of them fail: the failures are collected and
+   * reported in a single `AggregateError`, once the layer is fully released and never as a
+   * half-released layer. Failures of tools released as dependencies are reported too, not only
+   * those of the tools released as roots.
+   */
+  static async clearAsync(): Promise<void> {
+    const Tools = this as any
+    const targets: any[] = Object.keys(Tools.items || {}).map((name: string) => Tools.items[name])
+    const errors: any[] = []
+
+    let remaining: string[] = Object.keys(Tools.items || {})
+    while (remaining.length) {
+      const releasable = remaining.filter((name) => !Tools._isStillHeld(name))
+      // A dependency cycle leaves nothing releasable; break it by releasing the rest in order.
+      const batch = releasable.length ? releasable : remaining
+      for (const name of batch) {
+        try {
+          await Tools.unregisterAsync(name, { force: true, scope: 'local' })
+        } catch (e) {
+          errors.push(e)
+        }
+      }
+      remaining = releasable.length ? remaining.filter((name) => !batch.includes(name)) : []
+    }
+
+    // A dependency's failure is recorded on its own instance, so sweep the released tools as well:
+    // `clearAsync` reports the layer, not merely what it happened to release as a root.
+    for (const inst of targets) {
+      const error = state(inst).disposeError
+      if (error && !errors.includes(error)) errors.push(error)
+    }
+
+    if (errors.length) {
+      throw new AggregateError(
+        errors,
+        `[ToolFunc] clearAsync released the layer with ${errors.length} failing teardown(s)`,
+      )
+    }
   }
 
   /**

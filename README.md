@@ -105,17 +105,19 @@ lifecycle:
   is placed in the registry). It can mutate the options object it receives; the keys it touches are
   replayed back onto the instance through the same `initialize`/`assign` pipeline.
 - **`dispose`** is the exact inverse — its teardown runs when the tool is physically removed (refCount
-  hits zero, or `force` is used). Because the synchronous `unregister()` cannot await it, its returned
-  promise is tracked and any rejection is logged; use **`unregisterAsync()`** to await it and observe
-  the real error.
+  hits zero, or `force` is used); its returned promise is tracked and any rejection is logged.
+- **Sync initiates, async awaits**: `unregister()` and `Tools.clear()` are synchronous entry points, so
+  they only *start* a teardown. `unregisterAsync()` and `Tools.clearAsync()` await it to the end — the
+  tool's own `dispose` *and* the dependency releases chained behind it. An asynchronous dependency
+  teardown therefore overlaps its holder's under `clear()`; `clearAsync()` avoids that, and reports
+  the layer's failures as one `AggregateError`.
 - **Teardown order**: a tool is torn down *before* the dependencies it declares, and those dependencies
   are released last-declared first. A dependency must outlive everything that uses it, so a dependent's
   `dispose` still finds a live dependency to give back what its `setup` took — stopping a timer before
   closing the pool it queries. Declare dependencies in dependency order (a dependency before the tool
   that uses it): that single convention keeps both the acquisition order and the release order (its
-  reverse) correct. `unregisterAsync()` awaits the whole chain — the tool's own `dispose` *and* the
-  dependency releases serialized behind it — and `Tools.clear()` runs the same teardown for everything
-  the layer owns instead of just dropping the tables.
+  reverse) correct. `Tools.clear()` / `Tools.clearAsync()` release everything the layer owns with that
+  same order, instead of just dropping the tables.
 - **Re-arm**: a successful `dispose` re-arms the lifecycle, so every unregister/register cycle runs
   `setup` again *and* is torn down again in turn — `dispose` is the exact inverse of `setup`. An
   instance with a `dispose` hook is therefore strictly paired: executing it before `register()` is
@@ -128,7 +130,7 @@ lifecycle:
 Instance-side surface on every registered tool: `ensureSetup()`/`ensureDispose()`,
 `isSetupDone()`/`isSetupPending()`, `registerAsync()`/`unregisterAsync()`, plus the `ready` and `disposed`
 promises. The **static surface**: `Tools.registerAsync(...)`, `Tools.unregisterAsync(...)`,
-`Tools.createAsync(...)`, `Tools.awaitReady(name)`, and `Tools.whenAllReady()`.
+`Tools.createAsync(...)`, `Tools.clearAsync()`, `Tools.awaitReady(name)`, and `Tools.whenAllReady()`.
 
 ```typescript
 import { ToolFunc, makeToolFuncLifecycle } from '@isdk/tool-func';

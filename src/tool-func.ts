@@ -843,6 +843,15 @@ export class ToolFunc extends AdvancePropertyManager {
    *
    * In a hierarchical registry, this only clears properties "owned" by the current
    * layer. Inherited items from parent registries remain visible through the prototype chain.
+   *
+   * Every tool this layer owns is released first, so its lifecycle actually runs: the tool — and
+   * the dependencies it solely holds — gives back whatever `setup` acquired. Swapping the tables
+   * alone would silently leak every one of them.
+   *
+   * Like `unregister()`, teardown is only *initiated*, never awaited: an asynchronous `dispose`
+   * cannot be waited for here, and since a dependency's release is chained behind its holder's, an
+   * asynchronous teardown is still in flight while the next tool goes down. Use `clearAsync()`
+   * (installed by the lifecycle ability) when the layer may hold asynchronous teardown.
    */
   static clear() {
     // Release what this layer owns *before* dropping the tables: a registered tool holds real
