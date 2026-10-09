@@ -6,7 +6,7 @@
 
 # Interface: UnregisterOptions
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:308](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L308)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:524](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L524)
 
 Options for unregistering a tool function.
 
@@ -16,13 +16,13 @@ Options for unregistering a tool function.
 
 > `optional` **decrement?**: `"once"` \| `"all"`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:321](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L321)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:541](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L541)
 
 How to handle the reference count.
 - 'once' (default): Decrement the count by one.
 - 'all': Completely remove the reference count entry.
 
-#### Default
+#### Default Value
 
 ```ts
 force ? 'all' : 'once'
@@ -34,7 +34,7 @@ force ? 'all' : 'once'
 
 > `optional` **force?**: `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:313](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L313)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:531](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L531)
 
 If true, force physical removal from the registry even if references exist.
 Also defaults the `decrement` option to `'all'` if not specified.
@@ -45,7 +45,7 @@ Also defaults the `decrement` option to `'all'` if not specified.
 
 > `optional` **scope?**: `"all"` \| `"local"` \| `"inherited"`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:331](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L331)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:553](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L553)
 
 The scope of unregistration in a hierarchical registry:
 - 'local' (default): Only remove if the item is "owned" by the current scope.

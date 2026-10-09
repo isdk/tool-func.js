@@ -6,7 +6,7 @@
 
 # Interface: StreamCallbacksAndOptions\<I, O\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:19](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/stream/create-callbacks-stream.ts#L19)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:19](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/stream/create-callbacks-stream.ts#L19)
 
 Configuration options and helper callback methods for stream lifecycle events.
 
@@ -33,7 +33,7 @@ The output chunk type.
 
 > `optional` **onCancel?**: (`reason`) => `void` \| `Promise`\<`void`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:49](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/stream/create-callbacks-stream.ts#L49)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:49](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/stream/create-callbacks-stream.ts#L49)
 
 `onCancel`: Called when the stream is cancelled by the reader side (e.g., client disconnect).
 In RPC/Dispatcher scenarios, this is the primary hook for handling aborted requests.
@@ -56,7 +56,7 @@ The cancellation reason provided by the reader.
 
 > `optional` **onClose?**: (`status`, `reason?`) => `void` \| `Promise`\<`void`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:64](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/stream/create-callbacks-stream.ts#L64)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:64](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/stream/create-callbacks-stream.ts#L64)
 
 `onClose`: Unified cleanup hook called exactly once, regardless of how the stream ended.
 This is the recommended place for resource deallocation (e.g., releasing handles, closing DB connections).
@@ -85,7 +85,7 @@ The error object or cancel reason, if applicable.
 
 > `optional` **onError?**: (`error`) => `void` \| `Promise`\<`void`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:55](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/stream/create-callbacks-stream.ts#L55)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:55](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/stream/create-callbacks-stream.ts#L55)
 
 `onError`: Called when an error occurs during stream processing or in other callbacks.
 This provides a specific hook for error telemetry before the stream is closed.
@@ -106,7 +106,7 @@ This provides a specific hook for error telemetry before the stream is closed.
 
 > `optional` **onFinal?**: (`controller`) => `void` \| `Promise`\<`void`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:42](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/stream/create-callbacks-stream.ts#L42)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:42](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/stream/create-callbacks-stream.ts#L42)
 
 `onFinal`: Called once when the stream is closed normally (upstream close).
 Note: This is NOT called if the stream is cancelled or errors out.
@@ -127,7 +127,7 @@ Note: This is NOT called if the stream is cancelled or errors out.
 
 > `optional` **onStart?**: (`controller`) => `void` \| `Promise`\<`void`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:24](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/stream/create-callbacks-stream.ts#L24)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:24](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/stream/create-callbacks-stream.ts#L24)
 
 `onStart`: Called once when the stream is initialized.
 Useful for protocol handshakes, injecting headers, or setting up local state.
@@ -148,7 +148,7 @@ Useful for protocol handshakes, injecting headers, or setting up local state.
 
 > `optional` **onTransform?**: (`chunk`, `controller`) => `void` \| `O` \| `Promise`\<`void` \| `O`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:36](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/stream/create-callbacks-stream.ts#L36)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/stream/create-callbacks-stream.ts:36](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/stream/create-callbacks-stream.ts#L36)
 
 `onTransform`: Called for each data chunk received from the upstream.
 If this callback is NOT provided, the transformer acts as a high-performance 

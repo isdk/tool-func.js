@@ -6,7 +6,7 @@
 
 # Class: TaskAbortController
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:17](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L17)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:17](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L17)
 
 ## Extends
 
@@ -18,7 +18,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 > **new TaskAbortController**(`parent`): `TaskAbortController`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:23](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L23)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:28](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L28)
 
 #### Parameters
 
@@ -36,11 +36,21 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:2
 
 ## Properties
 
+### \_taskCount?
+
+> `optional` **\_taskCount?**: `number`
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:26](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L26)
+
+共享该 aborter 的嵌套任务引用计数，用于决定何时清理 timeout 定时器
+
+***
+
 ### id?
 
 > `optional` **id?**: [`AsyncTaskId`](../type-aliases/AsyncTaskId.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:18](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L18)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:18](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L18)
 
 ***
 
@@ -48,7 +58,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 > **parent**: [`CancelableAbility`](CancelableAbility.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:21](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L21)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:24](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L24)
 
 ***
 
@@ -72,7 +82,19 @@ Returns the AbortSignal object associated with this object.
 
 > `optional` **streamController?**: `ReadableStreamDefaultController`\<`any`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:20](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L20)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:21](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L21)
+
+兼容性展示字段（last-wins），流的错误通知已改由 streamControllers 集合驱动
+
+***
+
+### streamControllers?
+
+> `optional` **streamControllers?**: `any`[]
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:23](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L23)
+
+共享该 aborter 的并发任务各自的流控制器（避免单值字段互相覆盖）
 
 ***
 
@@ -80,7 +102,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:2
 
 > `optional` **timeoutId?**: `any`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:19](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L19)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:19](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L19)
 
 ## Methods
 
@@ -88,7 +110,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 
 > **abort**(`reason?`, `data?`): `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:28](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L28)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:33](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L33)
 
 Invoking this method will set this object's AbortSignal's aborted flag and signal to any observers that the associated activity is to be aborted.
 
@@ -118,7 +140,7 @@ Invoking this method will set this object's AbortSignal's aborted flag and signa
 
 > **throwIfAborted**(`alreadyRejected?`): `true` \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:40](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L40)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:45](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L45)
 
 #### Parameters
 
@@ -136,7 +158,7 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:4
 
 > **throwRejected**(`alreadyRejected?`): `true` \| `undefined`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:53](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/utils/cancelable-ability.ts#L53)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:58](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L58)
 
 #### Parameters
 

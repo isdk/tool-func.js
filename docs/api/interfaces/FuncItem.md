@@ -6,7 +6,7 @@
 
 # Interface: FuncItem
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:227](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L227)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:397](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L397)
 
 Extends `BaseFuncItem` to include the actual function implementation.
 
@@ -24,7 +24,7 @@ Extends `BaseFuncItem` to include the actual function implementation.
 
 > `optional` **alias?**: `string` \| `string`[]
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:173](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L173)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:334](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L334)
 
 Optional aliases for the function name.
 
@@ -38,14 +38,14 @@ Optional aliases for the function name.
 
 > `optional` **asyncFeatures?**: `number`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:187](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L187)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:351](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L351)
 
 A bitmask representing asynchronous features supported by the function, built from `AsyncFeatureBits`.
 This allows the system to understand if a function supports capabilities like cancellation or multi-tasking.
 
 #### See
 
-AsyncFeatureBits from `@src/utils/cancelable-ability.ts`
+`AsyncFeatureBits` from `./utils/async-features`
 
 #### Example
 
@@ -68,7 +68,7 @@ const func = new ToolFunc({
 
 > `optional` **depends?**: `object`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:210](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L210)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:377](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L377)
 
 A map of dependencies this function has on other tool functions.
 Declaring dependencies ensures that they are automatically registered when this function is registered.
@@ -107,7 +107,7 @@ mainFunc.register();
 
 > `optional` **description?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:215](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L215)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:383](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L383)
 
 A detailed description of what the function does.
 
@@ -119,11 +119,13 @@ A detailed description of what the function does.
 
 ### func?
 
-> `optional` **func?**: [`TFunc`](../type-aliases/TFunc.md)
+> `optional` **func?**: `string` \| [`TFunc`](../type-aliases/TFunc.md)
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:232](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L232)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:405](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L405)
 
 The implementation of the tool function.
+Can be a real function, or a function-expression string (e.g. `'(a, b) => a + b'`)
+that will be compiled at construction time.
 
 ***
 
@@ -131,7 +133,7 @@ The implementation of the tool function.
 
 > `optional` **isApi?**: `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:162](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L162)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:321](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L321)
 
 If true, indicates that this function should be treated as a server-side API.
 
@@ -145,7 +147,7 @@ If true, indicates that this function should be treated as a server-side API.
 
 > `optional` **name?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:119](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L119)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:165](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L165)
 
 The unique name of the function.
 
@@ -159,7 +161,7 @@ The unique name of the function.
 
 > `optional` **params?**: [`FuncParams`](FuncParams.md) \| [`FuncParam`](FuncParam.md)[]
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:124](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L124)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:171](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L171)
 
 Parameter definitions, which can be an object mapping names to definitions or an array for positional parameters.
 
@@ -173,7 +175,7 @@ Parameter definitions, which can be an object mapping names to definitions or an
 
 > `optional` **result?**: `string` \| `Record`\<`string`, `any`\>
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:129](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L129)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:177](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L177)
 
 The expected return type of the function, described as a string or a JSON schema object.
 
@@ -187,9 +189,21 @@ The expected return type of the function, described as a string or a JSON schema
 
 > `optional` **scope?**: `any`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:134](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L134)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:196](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L196)
 
 The execution scope or context (`this`) for the function.
+
+Its keys become closure variables of the func, and a `this` key becomes the func's `this`.
+Because those bindings are captured while compiling, the scope is read at compile time:
+
+- a string [FuncItem.func](#func) is always compiled against it;
+- a *function* value is compiled from its own source when a non-empty scope is declared — a
+  source that is not a function expression (method shorthand, a class method, native code) is
+  used as-is instead, since it has no standalone source to compile;
+- an empty or absent scope leaves a function value untouched, so its lexical closure survives.
+
+A [BaseFuncItem.setup](BaseFuncItem.md#setup) hook may provide the scope too: it is applied *before* the func is
+compiled (see the lifecycle ability).
 
 #### Inherited from
 
@@ -197,57 +211,11 @@ The execution scope or context (`this`) for the function.
 
 ***
 
-### setup?
-
-> `optional` **setup?**: (`this`, `options?`) => `void`
-
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:157](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L157)
-
-A lifecycle hook called once during the `ToolFunc` instance's initialization.
-It allows for initial setup, state configuration, or property modification on the instance
-before it is used or registered. The `this` context is the `ToolFunc` instance itself.
-
-#### Parameters
-
-##### this
-
-[`ToolFunc`](../classes/ToolFunc.md)
-
-##### options?
-
-`FuncItem`
-
-The configuration options for the function.
-
-#### Returns
-
-`void`
-
-#### Example
-
-```ts
-const myFunc = new ToolFunc({
-  name: 'myFunc',
-  customState: 'initial',
-  setup() {
-    // `this` is the myFunc instance
-    this.customState = 'configured';
-  }
-});
-console.log(myFunc.customState); // Outputs: 'configured'
-```
-
-#### Inherited from
-
-[`BaseFuncItem`](BaseFuncItem.md).[`setup`](BaseFuncItem.md#setup)
-
-***
-
 ### stream?
 
 > `optional` **stream?**: `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:168](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L168)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:328](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L328)
 
 If true, indicates that the function has the *capability* to stream its output.
 Whether a specific call is streamed is determined by a `stream` property in the runtime parameters.
@@ -262,7 +230,7 @@ Whether a specific call is streamed is determined by a `stream` property in the 
 
 > `optional` **tags?**: `string` \| `string`[]
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:139](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L139)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:202](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L202)
 
 Tags for grouping or filtering functions.
 
@@ -276,10 +244,186 @@ Tags for grouping or filtering functions.
 
 > `optional` **title?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:220](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L220)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:389](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L389)
 
 A concise, human-readable title for the function, often used in UI or by AI.
 
 #### Inherited from
 
 [`BaseFuncItem`](BaseFuncItem.md).[`title`](BaseFuncItem.md#title)
+
+## Methods
+
+### cleanup()?
+
+> `optional` **cleanup**(`this`): `void` \| `Promise`\<`void`\>
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:315](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L315)
+
+A lifecycle hook called once at the **end of every call**, releasing whatever *that call*
+acquired. It is the call-scoped twin of [BaseFuncItem.dispose](BaseFuncItem.md#dispose): while `dispose` is tied to
+the instance's registration lifetime, `cleanup` is tied to a single `run()`.
+
+Because the tools are executed through an isolated shadow instance, the body may park per-call
+resources on `this` (`this.tx = begin()`) and `cleanup` releases exactly those — concurrent calls
+cannot collide. Declaring `cleanup` is what makes that isolation automatic; no flag is needed.
+
+It is invoked on every terminal path of the call, at most once: a synchronous result or throw, a
+settled promise (resolve *and* reject), a returned `ReadableStream` (once that stream finishes,
+fails or is cancelled), and an abort of the call's signal. Write it defensively (`this.tx?.rollback()`),
+since a body that threw before acquiring anything still ends the call.
+
+The hook may return a `Promise`. A synchronous entry point can only *initiate* that release (its
+rejection is logged rather than thrown), while `run()`/`runWithPos()` already return a promise and
+therefore resolve only after `cleanup` has settled. When both the body and `cleanup` fail, the two
+errors are reported as one `AggregateError`.
+
+NOTE: like [BaseFuncItem.setup](BaseFuncItem.md#setup) and [BaseFuncItem.dispose](BaseFuncItem.md#dispose), this hook is only invoked
+by the `makeToolFuncLifecycle` ability. Install it once, on the registry class you actually use:
+`const Tools = makeToolFuncLifecycle(ToolFunc)`.
+
+#### Parameters
+
+##### this
+
+[`ToolFunc`](../classes/ToolFunc.md)
+
+#### Returns
+
+`void` \| `Promise`\<`void`\>
+
+#### Example
+
+```ts
+const Tools = makeToolFuncLifecycle(ToolFunc);
+const myFunc = new Tools({
+  name: 'tx',
+  func() {
+    this.tx = db.begin();   // acquired whenever the body needs it, conditionally if you like
+    return this.tx.query('select 1');
+  },
+  cleanup() { return this.tx?.commit() },  // <- runs when the call ends, however it ends
+});
+```
+
+#### Inherited from
+
+[`BaseFuncItem`](BaseFuncItem.md).[`cleanup`](BaseFuncItem.md#cleanup)
+
+***
+
+### dispose()?
+
+> `optional` **dispose**(`this`): `void` \| `Promise`\<`void`\>
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:276](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L276)
+
+A lifecycle hook called once when the `ToolFunc` instance is **removed from the registry**,
+i.e. when the reference count drops to zero or when `unregister` is forced. It is the exact
+inverse of [BaseFuncItem.setup](BaseFuncItem.md#setup): releasing whatever `setup` acquired (connections,
+logins, timers, subscriptions...).
+
+The hook may return a `Promise`. Because the synchronous `unregister()` cannot await it, the
+returned promise is tracked and its rejection is logged rather than thrown. Use
+`unregisterAsync()` to await the teardown and observe the real error.
+
+After a successful `dispose`, the instance is re-armed: registering it again re-runs `setup`.
+
+NOTE: like [BaseFuncItem.setup](BaseFuncItem.md#setup), this hook is only invoked by the `makeToolFuncLifecycle`
+ability. Install it once, on the registry class you actually use:
+`const Tools = makeToolFuncLifecycle(ToolFunc)`.
+
+#### Parameters
+
+##### this
+
+[`ToolFunc`](../classes/ToolFunc.md)
+
+#### Returns
+
+`void` \| `Promise`\<`void`\>
+
+#### Example
+
+```ts
+const Tools = makeToolFuncLifecycle(ToolFunc);
+const myFunc = new Tools({
+  name: 'myFunc',
+  setup() { this.conn = connect() },
+  dispose() { this.conn.close() },
+  func: () => 'ok',
+});
+myFunc.register();
+myFunc.unregister(); // <- dispose runs here
+```
+
+#### Inherited from
+
+[`BaseFuncItem`](BaseFuncItem.md).[`dispose`](BaseFuncItem.md#dispose)
+
+***
+
+### setup()?
+
+> `optional` **setup**(`this`, `options?`): `void` \| `Promise`\<`void`\>
+
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:244](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L244)
+
+A lifecycle hook called once when the `ToolFunc` instance is **registered**, and again after
+it has been `dispose`d and re-registered. It is the exact inverse of [BaseFuncItem.dispose](BaseFuncItem.md#dispose).
+
+It allows for initial setup, state configuration, or property modification on the instance.
+The `this` context is the `ToolFunc` instance itself.
+
+The hook may return a `Promise`. When it does, the instance is *pending* until that promise
+settles: `run()` awaits it automatically, while `runSync()` refuses to execute and asks you to
+use `run()` / `await tool.ready` instead. Use `registerAsync()` when you want registration
+itself to wait for setup to finish.
+
+NOTE: this hook is only *invoked* by the `makeToolFuncLifecycle` ability — a plain `ToolFunc`
+stores it but never calls it. Install it once, on the registry class you actually use:
+`const Tools = makeToolFuncLifecycle(ToolFunc)`.
+
+Mutating `options` inside the hook still works (including after an `await`): the touched keys
+are re-applied through the very same `initialize`/`assign` pipeline that built the instance.
+A `scope` the hook provides — through `this.scope` or through the options object — is applied
+before a string `func` is compiled, and a scope *change* rebuilds it (see
+[BaseFuncItem.scope](BaseFuncItem.md#scope)).
+
+#### Parameters
+
+##### this
+
+[`ToolFunc`](../classes/ToolFunc.md)
+
+The `ToolFunc` instance the hook is bound to.
+
+##### options?
+
+`FuncItem`
+
+The configuration options for the function.
+
+#### Returns
+
+`void` \| `Promise`\<`void`\>
+
+#### Example
+
+```ts
+const Tools = makeToolFuncLifecycle(ToolFunc);
+const myFunc = new Tools({
+  name: 'myFunc',
+  customState: 'initial',
+  setup() {
+    // `this` is the myFunc instance
+    this.customState = 'configured';
+  }
+});
+myFunc.register(); // <- setup runs here, not in the constructor
+console.log(myFunc.customState); // Outputs: 'configured'
+```
+
+#### Inherited from
+
+[`BaseFuncItem`](BaseFuncItem.md).[`setup`](BaseFuncItem.md#setup)

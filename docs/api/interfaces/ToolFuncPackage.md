@@ -6,7 +6,7 @@
 
 # Interface: ToolFuncPackage
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:284](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L284)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:481](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L481)
 
 Describes a package of tool functions, including methods for registration and unregistration.
 
@@ -16,7 +16,7 @@ Describes a package of tool functions, including methods for registration and un
 
 > **name**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:289](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L289)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:487](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L487)
 
 The name of the tool function package.
 
@@ -26,7 +26,7 @@ The name of the tool function package.
 
 > **register**: (`data?`) => `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:294](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L294)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:494](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L494)
 
 A method to register all functions within the package.
 
@@ -48,7 +48,7 @@ Optional data to pass to the registration process.
 
 > `optional` **unregister?**: () => `void`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:298](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L298)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:500](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L500)
 
 An optional method to unregister all functions within the package.
 

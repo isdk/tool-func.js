@@ -6,7 +6,7 @@
 
 # Interface: FuncParam
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:58](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L58)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:75](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L75)
 
 Describes a single function parameter, including its name, type, and description.
 
@@ -16,7 +16,7 @@ Describes a single function parameter, including its name, type, and description
 
 > `optional` **description?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:81](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L81)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:102](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L102)
 
 A description of the parameter, explaining its purpose and usage.
 
@@ -26,7 +26,7 @@ A description of the parameter, explaining its purpose and usage.
 
 > `optional` **name?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:63](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L63)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:81](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L81)
 
 The name of the parameter.
 
@@ -36,7 +36,7 @@ The name of the parameter.
 
 > `optional` **required?**: `boolean`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:75](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L75)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:95](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L95)
 
 Indicates whether the parameter is required.
 
@@ -46,6 +46,6 @@ Indicates whether the parameter is required.
 
 > `optional` **type?**: `string`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:69](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L69)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:88](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L88)
 
 The data type of the parameter, represented as a string identifier (e.g., 'string', 'number').

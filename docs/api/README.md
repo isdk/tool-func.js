@@ -17,7 +17,8 @@ A powerful TypeScript framework for creating, managing, and executing modular to
 - **🧩 Execution Context & Concurrency Isolation:** Achieves concurrency safety with minimal memory overhead using prototype-chain-based "Shadow Instances". Safely access environmental data (like `traceId`, `signal`) via `this.ctx` and propagate context using the `tool.with(ctx)` chainable API.
 - **🔄 Async & Cancellable Tasks:** Transparently integrates cancellation capabilities via `makeToolFuncCancelable`. Automatically injects an `aborter` on every call, supports timeouts and `AbortSignal` linkage, and returns a `task` handle for external lifecycle control.
 - **🌊 Streaming Responses:** Easily create streaming outputs using the `stream` property. Process stream events seamlessly with `createCallbacksTransformer`, featuring unified cleanup hooks and zero-copy optimization.
-- **🚀 Lifecycle Hooks:** Use the `setup` method to execute one-time initialization logic and safely modify instance state.
+- **🚀 Lifecycle Hooks:** Install `makeToolFuncLifecycle` to turn the `setup` and `dispose` hook functions into a symmetric, registry-driven lifecycle
+  (terse API surface, with async setup, readiness gating, and explicit teardown).
 - **🧬 Flexible Argument Normalization:** Supports smart pattern recognition (strings, functions, objects) and deep merging during construction and registration to easily compose tool metadata.
 - **🔀 Dual-Mode Parameter Support:** Supports both semantically clear object parameters (`run`) and fixed-order positional parameters (`runWithPos`).
 - **🏷️ Aliases & Tags:** Assign multiple names (`alias`) or `tags` to functions for flexibility and grouping.
@@ -97,31 +98,150 @@ console.log(message); // "Hello, John Doe!"
 > **💡 Pro Tip: Local Dependency Aliasing**
 > In `runAsSync` or `runAs`, the framework prioritizes matching keys in the `depends` map (e.g., `userFetcher`). This allows you to define "local names" for dependencies that are only valid within the current tool, without polluting the global registry.
 
-### Lifecycle Hooks: The `setup` Method
+### Lifecycle Hooks: Full Lifecycle Lifecycle with `setup` and `dispose`
 
-The `setup` hook provides a way to run one-time initialization logic when a `ToolFunc` instance is created. This is useful for configuring the instance, setting up initial state, or modifying properties before the tool is registered or used. The `this` context inside `setup` refers to the `ToolFunc` instance itself.
+A plain `ToolFunc` stores the `setup` and `dispose` hook functions but **never calls them**; they
+are configuration fields. Install the lifecycle ability once on the registry class you actually use,
+`const Tools = makeToolFuncLifecycle(ToolFunc)`, and the hooks become a symmetric, registry-driven
+lifecycle:
+
+- **`register()`** runs `setup` (idempotently, once per registration lifetime, after the instance
+  is placed in the registry). It can mutate the options object it receives; the keys it touches are
+  replayed back onto the instance through the same `initialize`/`assign` pipeline.
+- **`scope` is a compile-time input**: the func is compiled against the tool's `scope` (its keys
+  become closure variables, a `this` key becomes the function's `this`), and those values are captured
+  while it compiles. A `scope` that `setup` provides — through `this.scope` or the options object — is
+  therefore applied *before* the func is compiled, exactly as it was when `setup` still ran in the
+  constructor.
+- **`dispose`** is the exact inverse — its teardown runs when the tool is physically removed (refCount
+  hits zero, or `force` is used); its returned promise is tracked and any rejection is logged.
+- **Sync initiates, async awaits**: `unregister()` and `Tools.clear()` are synchronous entry points, so
+  they only *start* a teardown. `unregisterAsync()` and `Tools.clearAsync()` await it to the end — the
+  tool's own `dispose` *and* the dependency releases chained behind it. An asynchronous dependency
+  teardown therefore overlaps its holder's under `clear()`; `clearAsync()` avoids that, and reports
+  the layer's failures as one `AggregateError`.
+- **Teardown order**: a tool is torn down *before* the dependencies it declares, and those dependencies
+  are released last-declared first. A dependency must outlive everything that uses it, so a dependent's
+  `dispose` still finds a live dependency to give back what its `setup` took — stopping a timer before
+  closing the pool it queries. Declare dependencies in dependency order (a dependency before the tool
+  that uses it): that single convention keeps both the acquisition order and the release order (its
+  reverse) correct. `Tools.clear()` / `Tools.clearAsync()` release everything the layer owns with that
+  same order, instead of just dropping the tables.
+- **Re-arm**: a successful `dispose` re-arms the lifecycle, so every unregister/register cycle runs
+  `setup` again *and* is torn down again in turn — `dispose` is the exact inverse of `setup`. An
+  instance with a `dispose` hook is therefore strictly paired: executing it before `register()` is
+  treated as a bug.
+- **`cleanup` — the call-scoped twin of `dispose`**: `setup`/`dispose` are tied to the instance's
+  *registration* lifetime, `cleanup` to a single *call*. Declaring it releases whatever that call
+  acquired, on every terminal path and at most once: a synchronous result or throw, a settled promise
+  (resolve *and* reject), a returned `ReadableStream` (once it finishes, fails or is cancelled), and an
+  abort of the call's signal — a cancelled call never unwinds its own stack, so a `finally` would never
+  run. The body parks the per-call resources on `this` (`this.tx = begin()`) and `cleanup` releases
+  exactly those: declaring the hook also makes each call run on its own isolated shadow instance, so
+  concurrent calls cannot collide. Write it defensively (`this.tx?.commit()`), since it is invoked for
+  a body that threw before acquiring anything too. A synchronous entry point can only *start* an async
+  release (its rejection is logged); `run()`/`runWithPos()` already return a promise and therefore
+  resolve only after the cleanup settled. When the body *and* the cleanup fail, the call reports one
+  `AggregateError`.
+- **Async setup**: if `setup` returns a promise, the instance becomes *pending*. `run()` / `runWithPos()`
+  await it automatically; `runSync()` / `runWithPosSync()` refuse to run and point at the async entry
+  points (`run()` / `await tool.ready`). The **static helpers** `registerAsync()`, `createAsync()`,
+  `awaitReady()`, and `whenAllReady()` await setup and (for the first two) the whole dependency tree.
+
+Instance-side surface on every registered tool: `ensureSetup()`/`ensureDispose()`,
+`isSetupDone()`/`isSetupPending()`, `registerAsync()`/`unregisterAsync()`, plus the `ready` and `disposed`
+promises. The **static surface**: `Tools.registerAsync(...)`, `Tools.unregisterAsync(...)`,
+`Tools.createAsync(...)`, `Tools.clearAsync()`, `Tools.awaitReady(name)`, and `Tools.whenAllReady()`.
 
 ```typescript
-const statefulTool = new ToolFunc({
-  name: 'statefulTool',
-  customState: 'initial', // Define a custom property
+import { ToolFunc, makeToolFuncLifecycle } from '@isdk/tool-func';
+
+const Tools = makeToolFuncLifecycle(ToolFunc);
+
+const db = new Tools({
+  name: 'db',
   setup() {
-    // `this` is the statefulTool instance
-    console.log(`Setting up ${this.name}...`);
-    this.customState = 'configured';
-    this.initializedAt = new Date();
+    // runs at register() time, not in the constructor; this is still the instance
+    this.conn = connect();
+  },
+  dispose() {
+    this.conn.close();
   },
   func() {
-    return `State: ${this.customState}, Initialized: ${this.initializedAt.toISOString()}`;
-  }
+    return this.conn.query('select 1');
+  },
 });
 
-console.log(statefulTool.customState); // "configured"
+db.register();            // <- setup() runs here
+await Tools.run('db');    // setup has already completed by the time func runs
+db.unregister();          // <- dispose() runs here
 
-statefulTool.register();
-console.log(await ToolFunc.run('statefulTool'));
-// "State: configured, Initialized: ..."
+// Async setup: the instance is pending until setup settles.
+const slow = new Tools({
+  name: 'slow',
+  async setup() { this.readyAt = await Promise.resolve('now'); },
+  func() { return this.readyAt; },
+});
+// slow.runSync() would throw; use the async surface instead:
+await Tools.registerAsync(slow);       // waits for setup (and dependencies) to settle
+await Tools.whenAllReady();            // waits for every tool in the registry to be ready
+await Tools.createAsync({ name: 'temp', setup() { /* ... */ } });  // creates + sets up, without registering
+
+// Per-call resources: `cleanup` is the call-scoped twin of `dispose`.
+const tx = new Tools({
+  name: 'tx',
+  func() {
+    this.tx = db.begin();   // acquired by the body, whenever (and if) it is needed
+    return this.tx.query('select 1');
+  },
+  cleanup() { return this.tx?.commit(); },  // runs when the call ends, however it ends
+});
+await tx.run();  // resolves only after cleanup() has settled
 ```
+
+> **⚠️ A bare instance is a no-op for lifecycle.** `new ToolFunc({ setup(){...}, dispose(){...} })
+> .register()` does nothing with the hooks. If you need lifecycle, always construct from a registry
+> class that has been enhanced with `makeToolFuncLifecycle` (or a subclass of one).
+
+### The Per-Call Scope: `cleanup` and Its Terminal Paths
+
+`setup`/`dispose` are **registration** scoped — one resource lifetime per registration. `cleanup` is
+**call** scoped — one resource lifetime per `run()`. Declaring it makes the framework close that scope
+exactly once, no matter how the call ends:
+
+| Terminal path | When `cleanup` runs |
+| --- | --- |
+| Synchronous return | right after the body returns its value |
+| Synchronous throw | in the throw path, before the error is rethrown |
+| Async body (promise) | after it settles — on resolve *and* on reject; `run()` resolves only once the release settled |
+| Returned `ReadableStream` | when the stream ends, errors or is cancelled by the consumer |
+| Call signal aborts | as soon as `ctx.signal` / `ctx.aborter.signal` fires |
+
+The last two are the ones `try/finally` cannot express, and the reason this belongs to the framework:
+
+- **A stream's value is produced before it is consumed.** `finally` runs when the body *returns* the
+  stream — before a single chunk reaches the consumer. The scope stays open until the stream itself
+  closes: the framework pipes it through one identity `TransformStream` whose `onClose` is the release.
+- **A cancelled call never unwinds its own stack.** An `AbortSignal` only *notifies*; it does not throw
+  through your frames, so a `finally` never runs. The scope is closed by the signal instead.
+
+Semantics worth knowing:
+
+- **Exactly once.** Every terminal path funnels into the same release, so a stream that is aborted and
+  then cancelled still releases once.
+- **`this` is the call's shadow instance.** Declaring `cleanup` also forces per-call isolation, so the
+  fields the body parks on `this` are private to that call — concurrent calls cannot collide. Sharing a
+  single resource with nested calls is done through `this.ctx`, which `runAs` targets inherit.
+- **Write it defensively.** `cleanup` is invoked even for a body that threw before acquiring anything,
+  so guard it (`this.tx?.commit()`).
+- **Nesting order.** A nested `runAs`/`runAsSync` child releases its own scope when its own call ends —
+  before the parent continues, hence before the parent releases. When the parent `await`s the child, the
+  child's asynchronous release has already settled by the time the parent resumes.
+- **Sync starts, async waits.** As with `unregister()`, a synchronous entry point can only *initiate* an
+  asynchronous release (its rejection is logged, never thrown). `run()`/`runWithPos()` already return a
+  promise, so they resolve only after the cleanup settled.
+- **One error, not two.** If the body *and* the cleanup both fail, the call reports a single
+  `AggregateError` carrying both.
 
 ### Registration Lifecycle & Reference Counting
 
@@ -141,6 +261,22 @@ When you register a tool with `depends`, the framework automatically handles the
 - **Auto-Unregistration**: When a parent tool is completely removed (refCount reaches zero), it automatically triggers unregistration requests for all its dependencies (decrementing their refCounts).
 
 This ensures that as long as at least one parent tool is active, its required child tools will not be accidentally unloaded.
+
+> **🔧 Internal Convention: Circular Dependency Detection via `options._stack` (Plugin Developers)**
+>
+> When a tool declares `depends`, registration recurses into each dependency. To terminate
+> circular chains (A → B → A), the framework threads an internal **stack** — a `Set` of the
+> ancestor names currently being registered — through the recursive `register` calls:
+>
+> - **Carrying**: the stack is passed as `options._stack` (it may sit either in the first-arg
+>   config object or in the second-arg options). It is **consumed and removed** during
+>   normalization (see `_extractStack`), so it never becomes instance state and is never
+>   serialized.
+> - **Back-edge behavior**: if a name is already in the stack, `register` returns `false` —
+>   the tool is already being registered in the current call chain, so re-entry is skipped.
+> - **If you override `register()` / `_acquireDependencies()`**: keep threading the stack via
+>   `{ _stack: stack }` in the options object — do not add a third parameter. Only the wrapper
+>   object is consumed; the `Set` itself passes through recursion unchanged.
 
 #### 3. Implementation Overriding
 
@@ -438,6 +574,27 @@ try {
 - **Task Handle**: The `task` object is attached to the Promise returned by `ToolFunc.run`. This allows callers to control the task lifecycle directly without needing to know context details.
 - **Timeout Support**: You can pass a `timeout` parameter (via `params` or `ctx`) directly when calling, and the framework will automatically set a timer and trigger `aborter.abort()` after timeout.
 
+#### 4. Abort Rejections & Unhandled Rejection Safety
+
+An aborted task **rejects** its `TaskPromise` with an `AbortError` (because of a `timeout`, an external `signal`, or an explicit `task.abort()`). When several concurrent tasks **share one aborter** — for example, multiple `run()` calls on the same `tool.with(ctx)` runner, or one external signal / timeout that fans out to a whole group — they all reject at (nearly) the same moment.
+
+The library intentionally **does not swallow** these rejections: doing so would hide genuine task failures and disable Node's `unhandledRejection` diagnostics. It is therefore **the caller's responsibility to attach a rejection handler to every task promise**. Register the handlers *before* awaiting any of them; otherwise the not-yet-awaited promises can be reported as unhandled rejections (and, under Node's default `--unhandled-rejections=throw`, can even terminate the process):
+
+```typescript
+const p1 = runner.run({ timeout: 40 })
+const p2 = runner.run() // shares the runner's aborter → rejects together with p1
+
+// ❌ p2 may already have rejected while you are still awaiting p1
+// await p1
+// await p2
+
+// ✅ Attach handlers to both first, then await.
+await Promise.allSettled([p1, p2])
+
+// or keep the settled values:
+const [r1, r2] = await Promise.all([p1.catch(e => e), p2.catch(e => e)])
+```
+
 ### Streaming Responses
 
 To create a tool that can stream its output, follow these steps:
@@ -661,7 +818,28 @@ The system automatically recognizes the following patterns:
   - The second argument fills in missing properties recursively.
   - `const tool = new ToolFunc({ name: 'task', title: 'Main' }, { title: 'Fallback' }); // title will be 'Main'`
 
-#### 3. Deep Merging Benefits
+- **`(string, funcString)`**:
+  - The first argument is the fixed `name`, the second is the implementation as a **function-expression string**.
+  - `ToolFunc.register('add', '(a, b) => a + b');`
+
+- **`(string, funcString, config)`**:
+  - Same as above, plus an optional third **config object** describing `params`, `description`, `title`, etc. Works the same way for the constructor:
+  - `ToolFunc.register('add', '(a, b) => a + b', { params: [{ name: 'a' }, { name: 'b' }], description: 'Adds two numbers' });`
+  - `const add = new ToolFunc('add', '(a, b) => a + b', { params: [{ name: 'a' }, { name: 'b' }], description: 'Adds two numbers' });`
+
+#### 3. String Functions
+
+A `func` can be provided as a string and is compiled at construction/registration time. This is especially useful when loading tool definitions from persisted data (the framework itself exports `func` as a string when serializing a tool).
+
+- **Accepted formats** — the string must be a **function expression**: an arrow expression (`'(a, b) => a + b'`), a function expression (`'function(a, b) { return a + b }'`), or a named function expression (`'function greet(name) { return name; }'`).
+- **Bare expressions are rejected** — a string like `'a + b'` evaluates to a value instead of a function, so it throws a clear error. Use an arrow form instead.
+- **Calling convention** — a string func like `'(a, b) => ...'` is positional, so declare `params` as an array (`[{ name: 'a' }, { name: 'b' }]`) to use `run`/`runSync` with named params, or call it with `runWithPos`/`runWithPosSync`.
+- **Name derivation** — when no `name` is configured, the name is derived from a named function expression (e.g. `'function add(a, b) {...}'` → `add`).
+- **Scope** — the `scope` option provides closure variables: `new ToolFunc({ name: 't', scope: { secret: 42 }, func: '() => secret' })`. It also applies to a *function* value (compiled from its own source, so a method-shorthand source cannot bind a scope and is used as-is), while an empty or absent scope leaves a function value untouched — its lexical closure survives. With the lifecycle ability installed, a `setup` hook may provide the scope too (see [Lifecycle Hooks](#lifecycle-hooks-full-lifecycle-lifecycle-with-setup-and-dispose)).
+
+> **⚠️ Security note:** string funcs are compiled with `new Function`, i.e. arbitrary code execution. Only register strings from trusted sources (e.g. your own persisted data).
+
+#### 4. Deep Merging Benefits
 
 Because it uses `defaultsDeep`, you can provide partial defaults for nested structures like `params`, `depends`, or `result` schemas.
 

@@ -6,7 +6,7 @@
 
 # Interface: FuncParams
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:97](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L97)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:122](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L122)
 
 A map of function parameters, where each key is the parameter name.
 The value can be either a detailed `FuncParam` object or a simple type string.

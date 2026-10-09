@@ -2,11 +2,11 @@
 
 ***
 
-[@isdk/tool-func](../globals.md) / CancelableAbilityOptions
+[@isdk/tool-func](../globals.md) / LifecycleAbilityOptions
 
-# Interface: CancelableAbilityOptions
+# Interface: LifecycleAbilityOptions
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:11](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L11)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/lifecycle-ability.ts:7](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/lifecycle-ability.ts#L7)
 
 ## Extends
 
@@ -17,14 +17,6 @@ Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:1
 > \[`name`: `string`\]: `any`
 
 ## Properties
-
-### asyncFeatures?
-
-> `optional` **asyncFeatures?**: [`AsyncFeatures`](../enumerations/AsyncFeatures.md)
-
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:12](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L12)
-
-***
 
 ### classMethods?
 
@@ -71,22 +63,6 @@ Defined in: custom-ability.js/lib/index.d.ts:10
 #### Inherited from
 
 `AbilityOptions.include`
-
-***
-
-### isReadyFn?
-
-> `optional` **isReadyFn?**: `SemaphoreIsReadyFuncType`
-
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:14](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L14)
-
-***
-
-### maxTaskConcurrency?
-
-> `optional` **maxTaskConcurrency?**: `number`
-
-Defined in: [@isdk/ai-tools/packages/tool-func/src/utils/cancelable-ability.ts:13](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/utils/cancelable-ability.ts#L13)
 
 ***
 

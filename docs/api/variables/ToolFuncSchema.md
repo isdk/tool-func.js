@@ -8,7 +8,7 @@
 
 > `const` **ToolFuncSchema**: `object`
 
-Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:1481](https://github.com/isdk/tool-func.js/blob/ce5fd396c29452d8e01479642d9655aeef531157/src/tool-func.ts#L1481)
+Defined in: [@isdk/ai-tools/packages/tool-func/src/tool-func.ts:2007](https://github.com/isdk/tool-func.js/blob/9b897b93abedaf6bd89e126cbe7bfd93fa608596/src/tool-func.ts#L2007)
 
 **`Internal`**
 
@@ -122,6 +122,23 @@ This controls how properties are assigned and exported.
 #### result.type
 
 > **type**: `string` = `'any'`
+
+### scope
+
+> **scope**: `object`
+
+Declared *before* `func` on purpose: `assign()` walks the schema in declaration order and the
+`func` hook compiles a function-expression string against `dest.scope`, so the scope must
+reach the instance first. Kept out of the exported data (`exported: false`) like `depends`:
+it holds runtime references, not serializable metadata.
+
+#### scope.exported
+
+> **exported**: `boolean` = `false`
+
+#### scope.type
+
+> **type**: `string` = `'object'`
 
 ### setup
 
