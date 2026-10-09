@@ -22,8 +22,9 @@ function makeHierarchy() {
   const Base = makeToolFuncLifecycle(ToolFunc)
   class Parent extends (Base as any) {}
   class Child extends Parent {}
-  Parent.isolateRegistry()
-  Child.isolateRegistry()
+  // Parent/Child 继承自 `Base as any`，静态侧没有 ability 的类型，只能 as any
+  ;(Parent as any).isolateRegistry()
+  ;(Child as any).isolateRegistry()
   return { P: Parent as any, C: Child as any }
 }
 

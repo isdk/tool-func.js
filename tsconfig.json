@@ -6,11 +6,17 @@
     "moduleResolution": "Bundler",
     "strict": true,
     // "strictNullChecks": false,
-    "typeRoots": [
-      "./types",
-      "./node_modules/@types",
-      "./node_modules/@microsoft"
-    ],
+    // 注意：这里不要再设置 typeRoots。一旦显式设置 typeRoots，
+    // compilerOptions.types 就只会在这些目录里查找，`vitest/globals`
+    // 会报 TS2688（Cannot find type definition file for 'vitest/globals'）。
+    // vitest 的 `globals: true` 只负责运行时注入，类型要靠下面这行。
+    // 不要把 "jest" 加进来：@types/jest 的全局声明会和 vitest/globals 冲突（TS6200），
+    // 所以 @types/jest 已从 devDependencies 移除。
+    "types": ["vitest/globals", "node"],
+    // 这份 tsconfig 只给编辑器 / 类型检查用（构建走 tsup + tsconfig.release.json），
+    // 所以可以开 allowImportingTsExtensions（test/*.test.ts 里 import 带 .ts 后缀）。
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
 
     "strictPropertyInitialization": false,
     "useDefineForClassFields": false,
@@ -22,13 +28,10 @@
     "noImplicitAny": false,
     "resolveJsonModule": true,
     "strictNullChecks": true,
-    "allowSyntheticDefaultImports": true,
+    "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*"],
-  "exclude": [
-    "node_modules",
-    "**/*.spec.ts",
-    "**/*.test.ts",
-    "**/*.test.js",
-  ]
+  // 开发/编辑器视角：测试文件也要在 program 里，否则 VS Code 会把它们
+  // 当成 invisible file 放进 inferred project，types 配置对它们无效。
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "dist", "web", "docs"]
 }
