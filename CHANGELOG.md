@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.0.0](https://github.com///compare/v1.0.0...v2.0.0) (2026-10-09)
+
+### ⚠ BREAKING CHANGES
+
+* add setup/dispose with async supports
+
+### Features
+
+* add clearAsync() and state the sync/async teardown contract ([701d1ee](https://github.com///commit/701d1ee573cb17764c1ddbad13c9401b5c28b083))
+* add per-call cleanup hook as the call-scoped twin of dispose ([73fc69a](https://github.com///commit/73fc69a14b94d894dfb6112d9b5d9807dedfb65c))
+* add setup/dispose with async supports ([7fe7090](https://github.com///commit/7fe7090e23a4a3e43e8e1c350d043d561da76190))
+* support string func registration and internal _stack via options ([e89db7f](https://github.com///commit/e89db7fe17efad1eb0ca4e08bb88267a736aaa77))
+
+### Bug Fixes
+
+* harden CancelableAbility concurrency, task identity and timeout semantics ([6088ffb](https://github.com///commit/6088ffb9d38f5816590c411170423d1928a3f16e)), references [#5](https://github.com///issues/5) [6/#7](https://github.com///issues/7)
+* restore scope binding for a function-valued func ([b87055c](https://github.com///commit/b87055c8dab6fe12aeeb7c975ae70c0bc2b829b7))
+* tear a tool down before its dependencies and re-arm every lifetime ([9294215](https://github.com///commit/929421540620308ef01fc9342d6c1b8b421c44f1))
+
 ## [1.0.0](https://github.com/isdk/tool-func.js/compare/v0.1.1...v1.0.0) (2026-07-05)
 
 
